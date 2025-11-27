@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA Inventory Manager - Local</title>
+    
+    <!-- PWA Requirements (Removed for local file execution compatibility) -->
+    <!-- <link rel="manifest" href="./manifest_local.json"> -->
+    <meta name="theme-color" content="#262626">
+
+    <!-- Styles and Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* --- INVERTED BLACK & WHITE THEME --- */
+        body { font-family: 'Inter', sans-serif; background-color: #1a1a1a; color: #f0f0f0; }
+        .modal-overlay { 
+            background-color: rgba(0, 0, 0, 0.8); 
+            /* Ensure the overlay is displayed using flex when active */
+            display: flex;
+        }
+        .modal-overlay.hidden {
+            display: none;
+        }
+        .dashboard-card { transition: transform 0.1s; border: 1px solid #4a4a4a; background-color: #262626; }
+        .dashboard-card:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(255, 255, 255, 0.1); }
+        .action-btn { transition: background-color 0.15s, transform 0.1s; }
+        .action-btn:hover { transform: translateY(-1px); }
+        
+        /* Table Styles for Dark Theme */
+        .table-header { background-color: #262626; color: #ccc; }
+        .table-row-bg { background-color: #1a1a1a; }
+        
+        /* Buttons */
+        .header-btn { background-color: white; color: #1a1a1a; }
+        .header-btn:hover { background-color: #e0e0e0; }
+        .danger-btn { background-color: #dc2626; color: white; }
+        .danger-btn:hover { background-color: #ef4444; }
+        
+        /* Input Fields */
+        .input-dark { background-color: #333; color: white; border-color: #4a4a4a; }
+        .input-dark:focus { border-color: white; outline: none; }
+        
+        /* Tabs */
+        .tab-button { background-color: #333; color: #ccc; border-radius: 0.5rem 0.5rem 0 0; }
+        .tab-button.active { 
+            background-color: #1a1a1a; 
+            border-bottom: 2px solid white; 
+            color: white; 
+            font-weight: 600;
+        }
+
+        /* Close Button (Fixed and Centered) */
+        .close-btn {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: #dc2626;
+            color: white;
+            border-radius: 50%;
+            width: 2rem;
+            height: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .close-btn:hover { background: #ef4444; }
+    </style>
+
+    <!-- PWA Service Worker Registration REMOVED -->
+    <script>
+        // Service Worker registration logic removed because it fails in the 'null' (file://) protocol context.
+        // If running on localhost or an HTTPS server, this block should be re-enabled.
+    </script>
+</head>
+<body>
+    <div id="app" class="min-h-screen p-4 sm:p-8">
+        <!-- Header & Control Bar -->
+        <header class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+            <h1 class="text-3xl font-bold text-white">Inventory Dashboard</h1>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="openAddEditModal()"
+                    class="action-btn header-btn py-2 px-4 rounded-lg shadow-md font-semibold text-sm">
+                    Add New Item
+                </button>
+                <button onclick="document.getElementById('exportImportModal').classList.remove('hidden'); showImportTab('export')"
+                    class="action-btn header-btn py-2 px-4 rounded-lg shadow-md font-semibold text-sm">
+                    Export
+                </button>
+                <button onclick="document.getElementById('exportImportModal').classList.remove('hidden'); showImportTab('import')"
+                    class="action-btn header-btn py-2 px-4 rounded-lg shadow-md font-semibold text-sm">
+                    Import
+                </button>
+                <button onclick="document.getElementById('clearDataModal').classList.remove('hidden')"
+                    class="action-btn danger-btn py-2 px-4 rounded-lg shadow-md font-semibold text-sm">
+                    Clear All Data
+                </button>
+            </div>
+        </header>
+
+        <!-- Dashboard Metrics -->
+        <div id="dashboardMetrics" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <!-- Cards will be injected here -->
+        </div>
+
+        <!-- Inventory List -->
+        <div class="bg-[#262626] p-4 sm:p-6 rounded-lg shadow-xl mb-8 border border-[#4a4a4a]">
+            <h2 class="text-2xl font-semibold text-white mb-4">Current Inventory</h2>
+            <div class="mb-4">
+                <input type="text" id="inventorySearch" onkeyup="filterInventory()" placeholder="Search items by name..."
+                       class="w-full p-3 rounded-lg input-dark">
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-[#4a4a4a]">
+                    <thead class="table-header">
+                        <tr>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Item Name</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Stock</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Purchase Cost</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Sale Price</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventoryTableBody" class="bg-[#1a1a1a] divide-y divide-[#333]">
+                        <!-- Inventory items will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+            <p id="inventoryEmptyState" class="text-center text-gray-500 py-6 hidden">No inventory items found. Start by adding a new item!</p>
+        </div>
+
+        <!-- Sales History -->
+        <div class="bg-[#262626] p-4 sm:p-6 rounded-lg shadow-xl border border-[#4a4a4a]">
+            <h2 class="text-2xl font-semibold text-white mb-4">Sales History Log</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-[#4a4a4a]">
+                    <thead class="table-header">
+                        <tr>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Item Name</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Qty Sold</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Purchase Cost</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Sale Price</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="salesHistoryTableBody" class="bg-[#1a1a1a] divide-y divide-[#333]">
+                        <!-- Sales history will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+            <p id="salesEmptyState" class="text-center text-gray-500 py-6 hidden">No sales transactions logged yet.</p>
+        </div>
+    </div>
+
+    <!-- Modals -->
+
+    <!-- 1. Add/Edit Item Modal -->
+    <div id="addItemModal" class="modal-overlay fixed inset-0 hidden items-center justify-center p-4 z-50">
+        <div class="bg-[#262626] w-full max-w-lg p-6 rounded-xl shadow-2xl relative" onclick="event.stopPropagation()">
+            <div onclick="closeModal('addItemModal')" class="close-btn">
+                &times;
+            </div>
+            <h3 id="modalTitle" class="text-xl font-bold mb-4 text-white">Add New Item</h3>
+            <form id="itemForm">
+                <input type="hidden" id="itemId">
+                <div class="mb-4">
+                    <label for="itemName" class="block text-sm font-medium text-gray-300 mb-1">Item Name</label>
+                    <input type="text" id="itemName" required class="w-full p-3 rounded-lg input-dark">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="mb-4">
+                        <label for="initialStock" class="block text-sm font-medium text-gray-300 mb-1">Initial Stock</label>
+                        <input type="number" id="initialStock" required min="0" class="w-full p-3 rounded-lg input-dark">
+                    </div>
+                    <div class="mb-4">
+                        <label for="purchasePrice" class="block text-sm font-medium text-gray-300 mb-1">Purchase Cost ($)</label>
+                        <!-- min="0" to allow $0 cost for trades -->
+                        <input type="number" id="purchasePrice" required min="0" step="0.01" class="w-full p-3 rounded-lg input-dark">
+                    </div>
+                </div>
+                <div class="mb-6">
+                    <label for="salePrice" class="block text-sm font-medium text-gray-300 mb-1">Target Sale Price ($)</label>
+                    <input type="number" id="salePrice" required min="0.01" step="0.01" class="w-full p-3 rounded-lg input-dark">
+                </div>
+                
+                <div class="flex justify-between items-center space-x-3">
+                    <!-- Delete Button (Hidden by default, shown when itemId is set) -->
+                    <button type="button" id="deleteItemButton" onclick="deleteItem(document.getElementById('itemId').value)"
+                        class="action-btn danger-btn py-2 px-4 rounded-lg font-semibold text-sm hidden">
+                        Delete Item
+                    </button>
+
+                    <button type="submit" class="action-btn header-btn py-2 px-4 rounded-lg font-semibold">Save Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. Stock Transaction Modal -->
+    <div id="stockModal" class="modal-overlay fixed inset-0 hidden items-center justify-center p-4 z-50" onclick="if(event.target.id === 'stockModal') closeModal('stockModal')">
+        <div class="bg-[#262626] w-full max-w-sm p-6 rounded-xl shadow-2xl relative" onclick="event.stopPropagation()">
+            <div onclick="closeModal('stockModal')" class="close-btn">
+                &times;
+            </div>
+            <h3 id="stockModalTitle" class="text-xl font-bold mb-4 text-white">Adjust Stock</h3>
+            <p class="mb-4 text-gray-300">Adjusting stock for: <strong id="stockItemName" class="text-white"></strong></p>
+            <input type="hidden" id="stockItemId">
+            <input type="hidden" id="stockType">
+
+            <div class="mb-6">
+                <label for="stockQuantity" class="block text-sm font-medium text-gray-300 mb-1">Quantity</label>
+                <input type="number" id="stockQuantity" required min="1" class="w-full p-3 rounded-lg input-dark">
+            </div>
+
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeModal('stockModal')" class="action-btn bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 font-semibold">Cancel</button>
+                <button type="button" onclick="processStockAdjustment()" id="stockConfirmButton" class="action-btn bg-white text-black py-2 px-4 rounded-lg hover:bg-gray-200 font-semibold">Confirm Adjustment</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Clear Data Confirmation Modal -->
+    <div id="clearDataModal" class="modal-overlay fixed inset-0 hidden items-center justify-center p-4 z-50" onclick="if(event.target.id === 'clearDataModal') closeModal('clearDataModal')">
+        <div class="bg-[#262626] w-full max-w-sm p-6 rounded-xl shadow-2xl relative border-t-8 border-[#dc2626]" onclick="event.stopPropagation()">
+            <div onclick="closeModal('clearDataModal')" class="close-btn">
+                &times;
+            </div>
+            <h3 class="text-2xl font-bold mb-3 text-[#dc2626]">DANGER: Clear All Data</h3>
+            <p class="text-gray-300 mb-6">Are you **absolutely sure** you want to permanently delete ALL inventory items and sales records? This action cannot be undone.</p>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeModal('clearDataModal')" class="action-btn bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 font-semibold">Cancel</button>
+                <button type="button" onclick="clearAllData()" class="action-btn danger-btn text-white py-2 px-4 rounded-lg font-semibold">Yes, Delete All Data</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Export/Import Modal -->
+    <div id="exportImportModal" class="modal-overlay fixed inset-0 hidden items-center justify-center p-4 z-50" onclick="if(event.target.id === 'exportImportModal') closeModal('exportImportModal')">
+        <div class="bg-[#262626] w-full max-w-4xl p-6 rounded-xl shadow-2xl relative" onclick="event.stopPropagation()">
+            <div onclick="closeModal('exportImportModal')" class="close-btn">
+                &times;
+            </div>
+            <h3 class="text-xl font-bold mb-4 text-white">Data Transfer</h3>
+            
+            <div class="flex border-b border-[#4a4a4a] mb-4">
+                <button id="exportTabButton" class="tab-button active py-2 px-4 mr-4" onclick="showImportTab('export')">Export Data</button>
+                <button id="importTabButton" class="tab-button py-2 px-4" onclick="showImportTab('import')">Import Data</button>
+            </div>
+            
+            <!-- Export Content -->
+            <div id="exportTab" class="transfer-tab-content">
+                <p class="text-sm text-gray-300 mb-3">Save data using clipboard (reliable) or download a file (less reliable in some browsers). The output below contains both Inventory and Sales History.</p>
+                <textarea id="csvOutput" rows="15" readonly class="w-full p-3 rounded-lg font-mono text-xs input-dark"></textarea>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button type="button" onclick="downloadCSVFile()" class="action-btn bg-gray-600 text-white py-2 px-3 rounded-lg hover:bg-gray-700 font-semibold text-sm">
+                        Download File
+                    </button>
+                    <button type="button" onclick="copyCSVToClipboard()" class="action-btn header-btn py-2 px-3 rounded-lg font-semibold text-sm">
+                        Copy to Clipboard
+                    </button>
+                </div>
+                <p id="copyMessage" class="text-green-400 mt-2 hidden text-right text-sm">Copied to clipboard!</p>
+            </div>
+
+            <!-- Import Content -->
+            <div id="importTab" class="transfer-tab-content hidden">
+                <div class="flex flex-col sm:flex-row gap-4 mb-4">
+                    <div class="flex-1">
+                        <h4 class="text-lg font-semibold text-white mb-2">Paste CSV Data</h4>
+                        <p class="text-sm text-gray-400 mb-1">Paste CSV data from clipboard.</p>
+                        <textarea id="csvInput" rows="10" placeholder="Paste your CSV data here..." class="w-full p-3 rounded-lg font-mono text-xs input-dark"></textarea>
+                        <!-- Removed 'Read from Clipboard' button -->
+                    </div>
+                    <div class="flex-1">
+                        <h4 class="text-lg font-semibold text-white mb-2">Upload CSV File</h4>
+                        <p class="text-sm text-gray-400 mb-1">Select a CSV file from your device.</p>
+                        <input type="file" id="csvFileInput" accept=".csv" class="w-full py-2 text-white bg-gray-700 rounded-lg">
+                        <p id="fileMessage" class="text-gray-400 mt-2 text-sm">No file selected.</p>
+                    </div>
+                </div>
+
+                <p class="text-xs text-gray-500 mb-4">Note: This import will process **both** Inventory Data (updates/creates items) and Sales History (replaces the entire log).</p>
+
+                <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="handleImport()" class="action-btn header-btn py-2 px-4 rounded-lg font-semibold">Import & Save Data</button>
+                </div>
+                <p id="importMessage" class="text-[#dc2626] mt-2 hidden text-right text-sm">Error processing import data.</p>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- CORE LOGIC SCRIPT (Local Storage) -->
+    <script>
+        // Global variables for local storage keys
+        const INVENTORY_KEY = 'localInventory';
+        const SALES_KEY = 'localSalesLog';
+        let fullInventoryList = []; 
+        let salesHistory = [];
+
+        // --- DATA ACCESS LAYER (Local Storage) ---
+
+        function loadData() {
+            try {
+                const inventoryData = localStorage.getItem(INVENTORY_KEY);
+                const salesData = localStorage.getItem(SALES_KEY);
+                
+                fullInventoryList = inventoryData ? JSON.parse(inventoryData) : [];
+                salesHistory = salesData ? JSON.parse(salesData) : [];
+                
+                // Sort the inventory and sales list (most recent first)
+                fullInventoryList.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                salesHistory.sort((a, b) => b.timestamp - a.timestamp);
+
+            } catch (e) {
+                console.error("Error reading from localStorage:", e);
+                fullInventoryList = [];
+                salesHistory = [];
+            }
+            
+            // Re-render UI after loading
+            renderInventoryTable(fullInventoryList);
+            updateDashboard(fullInventoryList);
+            renderSalesHistory(salesHistory);
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem(INVENTORY_KEY, JSON.stringify(fullInventoryList));
+                localStorage.setItem(SALES_KEY, JSON.stringify(salesHistory));
+            } catch (e) {
+                console.error("Error writing to localStorage:", e);
+                // Note: Using alert here as the modal is for confirmation, not warning
+                alert("Warning: Could not save data locally."); 
+            }
+        }
+        
+        // --- UTILITIES ---
+
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).substring(2);
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+        }
+
+        // --- RENDERING FUNCTIONS ---
+
+        function renderInventoryTable(items) {
+            const tableBody = document.getElementById('inventoryTableBody');
+            tableBody.innerHTML = '';
+            
+            if (items.length === 0) {
+                document.getElementById('inventoryEmptyState').classList.remove('hidden');
+                return;
+            } else {
+                document.getElementById('inventoryEmptyState').classList.add('hidden');
+            }
+
+            items.forEach(item => {
+                let stockContent;
+                const stockStatusClass = item.stock > 0 ? 'text-white' : 'text-[#dc2626]'; 
+                if (item.stock > 0) {
+                    stockContent = `<span class="font-bold ${stockStatusClass}">${item.stock}</span>`;
+                } else {
+                    stockContent = `<span class="font-bold ${stockStatusClass}">OUT OF STOCK</span>`;
+                }
+
+                const row = `
+                    <tr id="item-row-${item.id}">
+                        <td class="px-3 py-3 whitespace-nowrap text-sm font-medium text-white">${item.name}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${stockContent}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${formatCurrency(item.purchasePrice)}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${formatCurrency(item.salePrice)}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm font-medium flex gap-2">
+                            <button onclick="openStockModal('${item.id}', 'add')" class="action-btn bg-gray-600 text-white p-2 rounded-lg hover:bg-gray-700 text-xs">Add</button>
+                            <button onclick="openStockModal('${item.id}', 'sell')" class="action-btn danger-btn text-white p-2 rounded-lg text-xs">Sell</button>
+                            <button onclick="openAddEditModal('${item.id}')" class="text-gray-400 hover:text-white p-2 text-xs">Edit</button>
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        function updateDashboard(items) {
+            let totalStock = 0;
+            let totalInventoryCostValue = 0;
+            let totalRealizedProfit = 0;
+            let totalPotentialProfit = 0;
+
+            items.forEach(item => {
+                const stock = Number(item.stock) || 0;
+                const purchasePrice = Number(item.purchasePrice) || 0;
+                const salePrice = Number(item.salePrice) || 0;
+                const unitProfit = salePrice - purchasePrice;
+                const realizedProfit = Number(item.realizedProfit) || 0;
+
+                totalStock += stock;
+                totalInventoryCostValue += stock * purchasePrice;
+                totalRealizedProfit += realizedProfit;
+                totalPotentialProfit += stock * unitProfit;
+            });
+
+            const dashboardHTML = [
+                { title: "Total Items in Stock", value: totalStock, color: "#60A5FA", icon: "📦" },
+                { title: "Inventory Cost Value", value: formatCurrency(totalInventoryCostValue), color: "#3B82F6", icon: "💰" },
+                { title: "Total Realized Profit", value: formatCurrency(totalRealizedProfit), color: "#10B981", icon: "📈" },
+                { title: "Potential Profit", value: formatCurrency(totalPotentialProfit), color: "#F59E0B", icon: "🎯" }
+            ].map(metric => `
+                <div class="dashboard-card p-4 rounded-xl shadow-md border-l-4 border-[${metric.color}]">
+                    <div class="flex items-center justify-between">
+                        <p class="text-sm font-medium text-gray-400">${metric.title}</p>
+                        <span class="text-2xl">${metric.icon}</span>
+                    </div>
+                    <p class="mt-1 text-2xl font-bold text-white">${metric.value}</p>
+                </div>
+            `).join('');
+
+            document.getElementById('dashboardMetrics').innerHTML = dashboardHTML;
+        }
+
+        function renderSalesHistory(sales) {
+            const tableBody = document.getElementById('salesHistoryTableBody');
+            tableBody.innerHTML = '';
+
+            if (sales.length === 0) {
+                document.getElementById('salesEmptyState').classList.remove('hidden');
+                return;
+            } else {
+                document.getElementById('salesEmptyState').classList.add('hidden');
+            }
+
+            sales.forEach(sale => {
+                const timestamp = new Date(sale.timestamp).toLocaleString();
+                const row = `
+                    <tr>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm font-medium text-white">${sale.itemName}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-red-400 font-semibold">${sale.quantity}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${formatCurrency(sale.purchasePrice || 0)}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${formatCurrency(sale.salePrice)}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-500">${timestamp}</td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+
+        // --- MODAL & FORM LOGIC ---
+
+        window.closeModal = function(id) {
+            document.getElementById(id).classList.add('hidden');
+        };
+
+        window.openAddEditModal = function(itemId) {
+            const modal = document.getElementById('addItemModal');
+            const form = document.getElementById('itemForm');
+            const deleteBtn = document.getElementById('deleteItemButton');
+            form.reset();
+            document.getElementById('initialStock').disabled = false;
+            document.getElementById('itemId').value = '';
+            deleteBtn.classList.add('hidden'); // Hide delete button by default
+
+            if (itemId) {
+                const item = fullInventoryList.find(i => i.id === itemId);
+                if (!item) return;
+
+                document.getElementById('itemId').value = item.id;
+                document.getElementById('itemName').value = item.name;
+                document.getElementById('initialStock').value = item.stock; 
+                document.getElementById('initialStock').disabled = true; // Prevent direct stock edit
+                document.getElementById('purchasePrice').value = item.purchasePrice;
+                document.getElementById('salePrice').value = item.salePrice;
+                document.getElementById('modalTitle').textContent = `Edit Item: ${item.name}`;
+                deleteBtn.classList.remove('hidden'); // Show delete button when editing
+            } else {
+                document.getElementById('modalTitle').textContent = `Add New Item`;
+            }
+
+            modal.classList.remove('hidden');
+        };
+
+        window.deleteItem = function(itemId) {
+            if (!itemId) return;
+
+            // Use window.confirm as a confirmation replacement
+            const confirmation = window.confirm(`Are you sure you want to delete this item? This action cannot be undone.`);
+
+            if (confirmation) {
+                // Remove from inventory
+                const initialLength = fullInventoryList.length;
+                fullInventoryList = fullInventoryList.filter(item => item.id !== itemId);
+                
+                // Also clean up related sales history (optional, but good practice)
+                salesHistory = salesHistory.filter(sale => sale.itemId !== itemId);
+
+                if (fullInventoryList.length < initialLength) {
+                    saveData();
+                    loadData();
+                    closeModal('addItemModal');
+                    console.log(`Item with ID ${itemId} successfully deleted.`);
+                } else {
+                    console.warn(`Item with ID ${itemId} not found for deletion.`);
+                }
+            }
+        };
+
+        window.openStockModal = function(itemId, type) {
+            const item = fullInventoryList.find(i => i.id === itemId);
+            if (!item) return;
+
+            document.getElementById('stockItemId').value = itemId;
+            document.getElementById('stockItemName').textContent = item.name;
+            document.getElementById('stockType').value = type;
+            document.getElementById('stockQuantity').value = 1;
+            document.getElementById('stockQuantity').min = 1;
+            
+            const titleElement = document.getElementById('stockModalTitle');
+            const confirmButton = document.getElementById('stockConfirmButton');
+
+            if (type === 'sell') {
+                titleElement.textContent = `Sell Item: ${item.name}`;
+                confirmButton.textContent = 'Confirm Sale';
+                confirmButton.classList.remove('bg-white', 'text-black');
+                confirmButton.classList.add('danger-btn');
+            } else { // 'add'
+                titleElement.textContent = `Add Stock: ${item.name}`;
+                confirmButton.textContent = 'Confirm Purchase';
+                confirmButton.classList.remove('danger-btn');
+                confirmButton.classList.add('bg-white', 'text-black');
+            }
+
+            document.getElementById('stockModal').classList.remove('hidden');
+        }
+
+        window.processStockAdjustment = function() {
+            const itemId = document.getElementById('stockItemId').value;
+            const type = document.getElementById('stockType').value;
+            const quantity = Number(document.getElementById('stockQuantity').value);
+
+            if (quantity <= 0) return;
+
+            const itemIndex = fullInventoryList.findIndex(item => item.id === itemId);
+            if (itemIndex === -1) return;
+
+            const item = fullInventoryList[itemIndex];
+
+            if (type === 'sell') {
+                if (item.stock < quantity) {
+                    // Replaced alert with custom logging to console for iframe compatibility
+                    console.warn(`Cannot sell ${quantity}. Only ${item.stock} in stock.`);
+                    return;
+                }
+                item.stock -= quantity;
+                
+                // Realized profit calculation
+                const unitProfit = item.salePrice - item.purchasePrice;
+                item.realizedProfit = (item.realizedProfit || 0) + (quantity * unitProfit);
+
+                // Log sale, including purchase price
+                salesHistory.push({
+                    id: generateId(),
+                    itemId: itemId,
+                    itemName: item.name,
+                    quantity: quantity,
+                    purchasePrice: item.purchasePrice, 
+                    salePrice: item.salePrice,
+                    timestamp: Date.now()
+                });
+
+            } else { // 'add'
+                item.stock += quantity;
+            }
+            
+            saveData();
+            loadData();
+            closeModal('stockModal');
+        }
+
+        document.getElementById('itemForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const itemId = document.getElementById('itemId').value;
+            const name = document.getElementById('itemName').value;
+            const initialStock = Number(document.getElementById('initialStock').value);
+            const purchasePrice = Number(document.getElementById('purchasePrice').value);
+            const salePrice = Number(document.getElementById('salePrice').value);
+
+            if (itemId) {
+                // Edit existing item
+                const itemIndex = fullInventoryList.findIndex(item => item.id === itemId);
+                if (itemIndex !== -1) {
+                    const item = fullInventoryList[itemIndex];
+                    // Update main properties
+                    item.name = name;
+                    item.purchasePrice = purchasePrice;
+                    item.salePrice = salePrice;
+                }
+            } else {
+                // New item
+                const newItem = {
+                    id: generateId(),
+                    name: name,
+                    stock: initialStock,
+                    purchasePrice: purchasePrice,
+                    salePrice: salePrice,
+                    realizedProfit: 0,
+                };
+                fullInventoryList.push(newItem);
+            }
+            
+            saveData();
+            loadData();
+            closeModal('addItemModal');
+            document.getElementById('itemForm').reset();
+        });
+
+        // --- FILTERING ---
+        window.filterInventory = function() {
+            const searchText = document.getElementById('inventorySearch').value.toLowerCase();
+            
+            const filteredItems = fullInventoryList.filter(item => 
+                item.name.toLowerCase().includes(searchText)
+            );
+            renderInventoryTable(filteredItems);
+        };
+
+        // --- CLEAR ALL DATA ---
+        window.clearAllData = function() {
+            localStorage.removeItem(INVENTORY_KEY);
+            localStorage.removeItem(SALES_KEY);
+            loadData(); // Reload empty state
+            closeModal('clearDataModal');
+            // Replaced alert with console message for iframe compatibility
+            console.log("All local data has been cleared.");
+        };
+
+        // --- EXPORT/IMPORT MODAL LOGIC ---
+
+        window.showImportTab = function(tabName) {
+            document.getElementById('exportTab').classList.add('hidden');
+            document.getElementById('importTab').classList.add('hidden');
+            
+            document.getElementById('exportTabButton').classList.remove('active');
+            document.getElementById('importTabButton').classList.remove('active');
+
+            if (tabName === 'export') {
+                document.getElementById('exportTab').classList.remove('hidden');
+                document.getElementById('exportTabButton').classList.add('active');
+                document.getElementById('csvOutput').value = exportAllDataToCSV(); // NOW CALLS COMBINED FUNCTION
+            } else if (tabName === 'import') {
+                document.getElementById('importTab').classList.remove('hidden');
+                document.getElementById('importTabButton').classList.add('active');
+            }
+        }
+        
+        // --- EXPORT LOGIC (COMBINED) ---
+
+        // Helper function for Inventory Data Section
+        function getInventoryCSVSection() {
+            if (fullInventoryList.length === 0) return "ID,Name,Stock,PurchasePrice,SalePrice,UnitProfit,TotalCostValue,PotentialProfit,RealizedProfit\n";
+
+            const headers = ["ID", "Name", "Stock", "PurchasePrice", "SalePrice", "UnitProfit", "TotalCostValue", "PotentialProfit", "RealizedProfit"];
+            let csv = headers.join(',') + '\n';
+
+            fullInventoryList.forEach(item => {
+                const stock = Number(item.stock) || 0;
+                const purchasePrice = Number(item.purchasePrice) || 0;
+                const salePrice = Number(item.salePrice) || 0;
+                const realizedProfit = Number(item.realizedProfit) || 0;
+                
+                const unitProfit = salePrice - purchasePrice;
+                const totalCostValue = stock * purchasePrice;
+                const potentialProfit = stock * unitProfit;
+
+                // Escape double quotes in names and format numbers
+                const nameEscaped = item.name ? `"${item.name.replace(/"/g, '""')}"` : '';
+                
+                const row = [
+                    item.id,
+                    nameEscaped,
+                    stock,
+                    purchasePrice.toFixed(2),
+                    salePrice.toFixed(2),
+                    unitProfit.toFixed(2),
+                    totalCostValue.toFixed(2),
+                    potentialProfit.toFixed(2),
+                    realizedProfit.toFixed(2)
+                ].join(',');
+                csv += row + '\n';
+            });
+            return csv;
+        }
+
+        // Helper function for Sales History Section
+        function getSalesHistoryCSVSection() {
+            if (salesHistory.length === 0) return "ID,ItemID,ItemName,Quantity,PurchasePrice,SalePrice,Timestamp,DateTime\n";
+
+            const headers = ["ID", "ItemID", "ItemName", "Quantity", "PurchasePrice", "SalePrice", "Timestamp", "DateTime"];
+            let csv = headers.join(',') + '\n';
+
+            salesHistory.forEach(sale => {
+                const timestamp = sale.timestamp;
+                // Add a formatted date/time for readability, along with the raw timestamp
+                const dateTime = new Date(timestamp).toLocaleString('en-US'); 
+
+                // Escape item name
+                const nameEscaped = sale.itemName ? `"${sale.itemName.replace(/"/g, '""')}"` : '';
+
+                const row = [
+                    sale.id,
+                    sale.itemId,
+                    nameEscaped,
+                    sale.quantity,
+                    (sale.purchasePrice || 0).toFixed(2),
+                    sale.salePrice.toFixed(2),
+                    timestamp, // Raw timestamp
+                    `"${dateTime}"` // Formatted datetime
+                ].join(',');
+                csv += row + '\n';
+            });
+            return csv;
+        }
+
+        // Main function to combine and export all data
+        function exportAllDataToCSV() {
+            let csv = "";
+            
+            csv += "--- INVENTORY DATA ---\n";
+            csv += getInventoryCSVSection();
+            
+            csv += "\n--- SALES HISTORY ---\n";
+            csv += getSalesHistoryCSVSection();
+            
+            return csv;
+        }
+
+
+        window.copyCSVToClipboard = function() {
+            const csvOutput = document.getElementById('csvOutput');
+            const csvText = csvOutput.value;
+            
+            // 1. Try modern Clipboard API (preferred)
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(csvText).then(() => {
+                    showCopyMessage();
+                }).catch(err => {
+                    console.error('Failed to copy via clipboard API, falling back:', err);
+                    // 2. Fallback using execCommand
+                    fallbackCopyToClipboard(csvOutput);
+                });
+            } else {
+                // 2. Fallback using execCommand (for older browsers/iframes)
+                fallbackCopyToClipboard(csvOutput);
+            }
+        };
+
+        function fallbackCopyToClipboard(element) {
+            try {
+                // Select the text in the textarea
+                element.select();
+                element.setSelectionRange(0, 99999); // For mobile devices
+                
+                // Execute the copy command
+                document.execCommand('copy');
+                showCopyMessage();
+            } catch (e) {
+                // Replaced alert with console warning for iframe compatibility
+                console.warn('Copy failed. Please manually select and copy the text from the box.');
+                console.error('Fallback copy failed:', e);
+            }
+        }
+
+        function showCopyMessage() {
+            const msg = document.getElementById('copyMessage');
+            msg.classList.remove('hidden');
+            setTimeout(() => msg.classList.add('hidden'), 2000);
+        }
+
+        window.downloadCSVFile = function() {
+            const csvText = document.getElementById('csvOutput').value;
+            const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            
+            link.href = URL.createObjectURL(blob);
+            link.download = 'inventory_export_' + new Date().toISOString().slice(0, 10) + '.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+        
+        // --- IMPORT LOGIC (Robust CSV Parsing) ---
+        
+        function smartSplit(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+
+                if (char === '"') {
+                    // Handle escaped quote ("") inside a field
+                    if (inQuotes && line[i + 1] === '"') {
+                        current += '"';
+                        i++;
+                        continue;
+                    }
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result;
+        }
+
+        function parseCSV(text) {
+            // Split lines robustly (handling \r, \r\n, \n) and filter out empty lines.
+            const allLines = text.split(/\r?\n|\r/);
+            
+            // Trim and filter empty/whitespace-only lines
+            const lines = allLines.map(line => line.trim()).filter(line => line.length > 0);
+            
+            if (lines.length === 0) {
+                throw new Error("No valid data found to process.");
+            }
+            
+            // Get headers from the first line
+            const headers = smartSplit(lines[0]);
+            
+            const data = [];
+            
+            // Start iterating from the second line (index 1) to get data rows.
+            for (let i = 1; i < lines.length; i++) {
+                const values = smartSplit(lines[i]);
+                
+                // Basic check for row integrity
+                if (values.length !== headers.length) {
+                    console.warn(`Skipping malformed row with ${values.length} columns (expected ${headers.length}): ${lines[i]}`);
+                    continue;
+                } 
+
+                let obj = {};
+                for (let j = 0; j < headers.length; j++) {
+                    let value = values[j];
+                    // Strip enclosing quotes, but only if they are symmetrically present
+                    if (value.startsWith('"') && value.endsWith('"') && value.length > 1) {
+                         value = value.substring(1, value.length - 1);
+                    }
+                    obj[headers[j]] = value;
+                }
+                data.push(obj);
+            }
+            
+            // FIX: If lines.length was 1 (header only), data.length will be 0. This is the correct result 
+            // for an empty inventory/sales log. Return the data array (which may be empty).
+            return data;
+        }
+        
+        // Imports Inventory data (updates/creates items in fullInventoryList)
+        function importCSVData(data) {
+            let processedCount = 0;
+            fullInventoryList = []; // Reset inventory list for clean import
+
+            data.forEach(row => {
+                const itemId = row.ID;
+                
+                const itemData = {
+                    // Use a safe ID generation if the row ID is missing or invalid
+                    id: itemId && typeof itemId === 'string' && itemId.length > 5 ? itemId : generateId(), 
+                    name: row.Name || 'Unnamed Item',
+                    stock: Number(row.Stock) || 0,
+                    purchasePrice: Number(row.PurchasePrice) || 0,
+                    salePrice: Number(row.SalePrice) || 0,
+                    realizedProfit: row.RealizedProfit !== undefined ? Number(row.RealizedProfit) || 0 : 0,
+                };
+                
+                // Check for valid data types before processing
+                if (!itemData.name || isNaN(itemData.stock) || isNaN(itemData.purchasePrice) || isNaN(itemData.salePrice)) {
+                    console.warn(`Skipping malformed inventory row: ${row.Name}`);
+                    return;
+                }
+
+                // Append the item (since we cleared the list above, we are re-importing all items)
+                fullInventoryList.push(itemData);
+                processedCount++;
+            });
+
+            return processedCount;
+        }
+
+        // Imports Sales History data (replaces the entire salesHistory log)
+        function importSalesHistoryData(data) {
+            let processedCount = 0;
+            // Sales History is always replaced entirely on import
+            salesHistory = []; 
+
+            data.forEach(row => {
+                // Ensure essential fields exist and are correctly typed
+                const sale = {
+                    id: row.ID || generateId(),
+                    itemId: row.ItemID,
+                    itemName: row.ItemName || 'Unknown Item',
+                    quantity: Number(row.Quantity) || 0,
+                    purchasePrice: Number(row.PurchasePrice) || 0,
+                    salePrice: Number(row.SalePrice) || 0,
+                    // Prefer raw Timestamp (milliseconds) if available
+                    timestamp: Number(row.Timestamp) || Date.now(), 
+                };
+
+                if (sale.quantity > 0 && sale.itemId) {
+                    salesHistory.push(sale);
+                    processedCount++;
+                } else {
+                    console.warn(`Skipping malformed sale row: ${row.ItemName}`);
+                }
+            });
+
+            return processedCount;
+        }
+
+        
+        window.handleImport = async function() {
+            const importMsg = document.getElementById('importMessage');
+            importMsg.classList.add('hidden');
+            importMsg.classList.remove('text-green-400'); // Reset success color
+            importMsg.classList.add('text-[#dc2626]'); // Set error color
+            
+            let csvText = '';
+            let source = '';
+            
+            // 1. Get data from PASTE box
+            if (!document.getElementById('importTab').classList.contains('hidden')) {
+                csvText = document.getElementById('csvInput').value;
+                if (csvText.trim()) {
+                    source = 'paste';
+                }
+            }
+
+            // 2. Get data from FILE upload
+            const fileInput = document.getElementById('csvFileInput');
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                if (!csvText.trim()) { // Only read file if paste box is empty
+                    try {
+                        csvText = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = e => resolve(e.target.result);
+                            reader.onerror = e => reject(e);
+                            reader.readAsText(file);
+                        });
+                        source = 'file';
+                    } catch (e) {
+                        importMsg.textContent = "Error reading file.";
+                        importMsg.classList.remove('hidden');
+                        return;
+                    }
+                }
+            }
+
+            if (!csvText.trim()) {
+                importMsg.textContent = "No data provided for import.";
+                importMsg.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                let inventoryDataText = '';
+                let salesHistoryDataText = '';
+                
+                const inventoryHeader = '--- INVENTORY DATA ---';
+                const salesHeader = '--- SALES HISTORY ---';
+
+                const inventoryHeaderIndex = csvText.indexOf(inventoryHeader);
+                const salesHeaderIndex = csvText.indexOf(salesHeader);
+
+                if (inventoryHeaderIndex !== -1) {
+                    // --- A. Extract Inventory Section ---
+                    let invEndIndex = (salesHeaderIndex !== -1 && salesHeaderIndex > inventoryHeaderIndex) ? salesHeaderIndex : csvText.length;
+                    let inventoryContentBlock = csvText.substring(inventoryHeaderIndex + inventoryHeader.length, invEndIndex).trim();
+
+                    const invLines = inventoryContentBlock.split(/\r?\n|\r/).map(line => line.trim());
+                    const firstInvDataLineIndex = invLines.findIndex(line => line.startsWith("ID,Name,Stock")); 
+
+                    if (firstInvDataLineIndex !== -1) {
+                        // Join lines starting from the header line
+                        inventoryDataText = invLines.slice(firstInvDataLineIndex).join('\n').trim();
+                    } else {
+                        // If the marker is present but the header is not, something is wrong
+                        throw new Error("Inventory section found but data headers are missing.");
+                    }
+                    
+                    // --- B. Extract Sales History Section ---
+                    if (salesHeaderIndex !== -1) {
+                        let salesContentBlock = csvText.substring(salesHeaderIndex + salesHeader.length).trim();
+                        
+                        const salesLines = salesContentBlock.split(/\r?\n|\r/).map(line => line.trim());
+                        const firstSalesDataLineIndex = salesLines.findIndex(line => line.startsWith("ID,ItemID,ItemName")); 
+
+                        if (firstSalesDataLineIndex !== -1) {
+                            // Join lines starting from the header line
+                            salesHistoryDataText = salesLines.slice(firstSalesDataLineIndex).join('\n').trim();
+                        } else {
+                            // If header is present but no data lines, we proceed but log a warning
+                            console.warn("Sales History header found but data lines are missing. Skipping sales history import.");
+                        }
+                    }
+
+                } else {
+                    // Case: Legacy/Simple CSV format - assume entire input is Inventory Data
+                    inventoryDataText = csvText;
+                }
+                
+                // --- Processing ---
+                
+                // 1. Process Inventory Data (MUST run first)
+                if (!inventoryDataText.trim()) {
+                    // This handles if the extracted text for inventory is empty (e.g., marker was the only thing)
+                    // If this happens, we treat the list as empty, but we allow the sales history to continue.
+                    console.log("Inventory data block was empty. Resetting inventory list.");
+                    var inventoryCount = 0;
+                    fullInventoryList = [];
+                } else {
+                    const parsedInventoryData = parseCSV(inventoryDataText);
+                    var inventoryCount = importCSVData(parsedInventoryData);
+                }
+
+                // 2. Process Sales History Data
+                let salesCount = 0;
+                if (salesHistoryDataText.trim()) {
+                    const parsedSalesData = parseCSV(salesHistoryDataText);
+                    salesCount = importSalesHistoryData(parsedSalesData);
+                }
+
+                saveData(); // Final save after both imports
+                loadData(); // Reload UI
+                closeModal('exportImportModal');
+                
+                // Clear inputs after successful import
+                document.getElementById('csvInput').value = '';
+                fileInput.value = ''; // Clear file selection
+
+                // Success message update
+                importMsg.textContent = `Import Successful! ${inventoryCount} inventory items updated/created, ${salesCount} sales records logged.`;
+                importMsg.classList.remove('text-[#dc2626]', 'hidden');
+                importMsg.classList.add('text-green-400');
+                
+            } catch (error) {
+                console.error("Import error:", error);
+                importMsg.textContent = "Import Failed: " + error.message;
+                importMsg.classList.remove('hidden');
+                importMsg.classList.add('text-[#dc2626]');
+            }
+        };
+        
+        // --- INITIAL LOAD & KEY LISTENERS ---
+        window.onload = function() {
+            loadData();
+            
+            // Add global listener to close modals on ESC key (Accessibility)
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    // List of modals to check
+                    const modalIds = ['addItemModal', 'stockModal', 'clearDataModal', 'exportImportModal'];
+                    
+                    for (const id of modalIds) {
+                        const modal = document.getElementById(id);
+                        if (modal && !modal.classList.contains('hidden')) {
+                            closeModal(id);
+                            return; // Close only one modal at a time
+                        }
+                    }
+                }
+            });
+        };
+        
+    </script>
+</body>
+</html>
+

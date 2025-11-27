@@ -1,2 +1,2 @@
 # rt_inventory-
-Inventory and profit tracker
+Real time inventory and profit tracker

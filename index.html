@@ -1,0 +1,2167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RT INVENTORY - PWA Manager</title>
+    
+    <!-- PWA Configuration for iOS (to enable "fullscreen" / standalone mode on Safari) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png"> 
+    
+    <!-- Styles and Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js Library for graphing -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        /* --- INVERTED BLACK & WHITE THEME --- */
+        body { font-family: 'Inter', sans-serif; background-color: #1a1a1a; color: #f0f0f0; }
+        .modal-overlay { 
+            /* Modals are fixed and centered on the screen */
+            background-color: rgba(0, 0, 0, 0.8); 
+            display: flex;
+        }
+        .modal-overlay.hidden {
+            display: none;
+        }
+        .dashboard-card { transition: transform 0.1s; border: 1px solid #4a4a4a; background-color: #262626; }
+        .dashboard-card:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(255, 255, 255, 0.1); }
+        .action-btn { transition: background-color 0.15s, transform 0.1s; }
+        .action-btn:hover { transform: translateY(-1px); }
+        
+        /* Table Styles for Dark Theme */
+        .table-header { background-color: #262626; color: #ccc; }
+        .table-row-bg { background-color: #1a1a1a; }
+        
+        /* Buttons */
+        .header-btn { background-color: white; color: #1a1a1a; }
+        .header-btn:hover { background-color: #e0e0e0; }
+        .danger-btn { background-color: #dc2626; color: white; }
+        .danger-btn:hover { background-color: #ef4444; }
+        
+        /* Input Fields */
+        .input-dark { background-color: #333; color: white; border-color: #4a4a4a; }
+        .input-dark:focus { border-color: white; outline: none; }
+        
+        /* Menu Button Styling */
+        .menu-btn {
+            background-color: white; 
+            color: #1a1a1a;
+            transition: background-color 0.15s, transform 0.1s;
+        }
+        .menu-btn:hover { 
+            background-color: #e0e0e0; 
+            transform: translateY(-1px); 
+        }
+
+        /* Mobile Menu Overlay */
+        #mobileMenu {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 75%; /* Slide in 3/4 of the screen */
+            max-width: 300px;
+            height: 100%;
+            background-color: #262626;
+            transform: translateX(100%);
+            transition: transform 0.3s ease-in-out;
+            box-shadow: -5px 0 15px rgba(0, 0, 0, 0.5);
+            z-index: 50; /* Above regular content, below modals */
+        }
+        #mobileMenu.active {
+            transform: translateX(0);
+        }
+        .menu-link {
+            padding: 1rem 1.5rem;
+            color: white;
+            font-size: 1.1rem;
+            border-bottom: 1px solid #333;
+            transition: background-color 0.15s;
+        }
+        .menu-link:hover {
+            background-color: #333;
+        }
+        .menu-link.active-tab {
+             background-color: #1a1a1a;
+             border-left: 4px solid white;
+        }
+
+        /* Close Button (Fixed and Centered) */
+        .close-btn {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: #dc2626;
+            color: white;
+            border-radius: 50%;
+            width: 2rem;
+            height: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .close-btn:hover { background: #ef4444; }
+    </style>
+</head>
+<body>
+    <div id="app" class="min-h-screen p-4 sm:p-8">
+        <!-- Header & Control Bar -->
+        <header class="mb-6 relative">
+            <div class="flex justify-between items-start md:items-center space-y-3 md:space-y-0 mb-4">
+                <h1 class="text-3xl font-bold text-white">RT INVENTORY</h1>
+                
+                <!-- HAMBURGER MENU TOGGLE BUTTON (TOP RIGHT) -->
+                <button id="menuToggle" onclick="toggleMobileMenu()" 
+                        class="menu-btn p-3 rounded-full shadow-md font-semibold text-xl z-50">
+                    <!-- SVG Menu Icon (3 lines) from Lucide Icons -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-menu">
+                        <line x1="4" x2="20" y1="12" y2="12"/>
+                        <line x1="4" x2="20" y1="6" y2="6"/>
+                        <line x1="4" x2="20" y1="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Removed the old horizontal tab navigation -->
+            <!-- Hidden placeholder for legacy settings dropdown -->
+            <div id="settingsDropdown" class="hidden"></div>
+        </header>
+
+        <!-- MOBILE NAVIGATION OVERLAY -->
+        <div id="mobileMenu" class="fixed top-0 right-0 z-50 overflow-y-auto pt-16">
+            <h3 class="text-2xl font-bold text-white px-6 pt-4 pb-2 border-b border-[#333]">Navigation</h3>
+            <nav class="flex flex-col">
+                <button id="nav-dashboard" class="menu-link text-left active-tab" onclick="showMainTab('dashboard')">
+                    Dashboard & Inventory
+                </button>
+                <button id="nav-graph" class="menu-link text-left" onclick="showMainTab('graph'); renderProfitChart()">
+                    Profit Graph
+                </button>
+                <button id="nav-settings" class="menu-link text-left" onclick="showMainTab('settings')">
+                    Settings
+                </button>
+            </nav>
+        </div>
+
+
+        <!-- 1. DASHBOARD & INVENTORY TAB CONTENT -->
+        <div id="content-dashboard" class="main-tab-content pt-4">
+            <!-- Action buttons moved to top left and updated -->
+            <div class="flex flex-wrap justify-start gap-2 mb-6">
+                <button onclick="openAddEditModal()"
+                    class="action-btn header-btn py-2 px-4 rounded-lg shadow-md font-semibold text-sm">
+                    Add Inventory
+                </button>
+                 <!-- UPDATED BUTTON TEXT AND FUNCTION CALL -->
+                 <button onclick="openLogExpenseModal()"
+                    class="action-btn bg-yellow-400 hover:bg-yellow-500 text-black py-2 px-4 rounded-lg shadow-md font-semibold text-sm">
+                    Log Expense
+                </button>
+            </div>
+
+            <!-- Dashboard Metrics (Combined Inventory, Sales, Expenses, & Net Profit) -->
+            <div id="inventoryDashboardMetrics" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+                <!-- Cards will be injected here -->
+            </div>
+
+            <!-- Inventory List -->
+            <div class="bg-[#262626] p-4 sm:p-6 rounded-lg shadow-xl mb-8 border border-[#4a4a4a]">
+                <h2 class="text-2xl font-semibold text-white mb-4">Inventory Stock</h2>
+                <div class="mb-4">
+                    <input type="text" id="inventorySearch" onkeyup="filterInventory()" placeholder="Search items by name..."
+                           class="w-full p-3 rounded-lg input-dark">
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-[#4a4a4a]">
+                        <thead class="table-header">
+                            <tr>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Item Name</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Stock</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Purchase Cost</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Sale Price</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventoryTableBody" class="bg-[#1a1a1a] divide-y divide-[#333]">
+                            <!-- Inventory items will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+                <p id="inventoryEmptyState" class="text-center text-gray-500 py-6 hidden">No inventory items found. Start by adding a new item!</p>
+            </div>
+
+            <!-- Sales History -->
+            <div class="bg-[#262626] p-4 sm:p-6 rounded-lg shadow-xl border border-[#4a4a4a] mb-8">
+                <h2 class="text-2xl font-semibold text-white mb-4">Sales History</h2>
+                <!-- NEW: Search Bar for Sales History -->
+                <div class="mb-4">
+                    <input type="text" id="salesSearch" onkeyup="filterSalesHistory()" placeholder="Search sales by item name..."
+                           class="w-full p-3 rounded-lg input-dark">
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-[#4a4a4a]">
+                        <thead class="table-header">
+                            <tr>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Item Name</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Qty Sold</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Profit/Unit</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="salesHistoryTableBody" class="bg-[#1a1a1a] divide-y divide-[#333]">
+                            <!-- Sales history will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+                <p id="salesEmptyState" class="text-center text-gray-500 py-6 hidden">No sales transactions logged yet.</p>
+            </div>
+
+            <!-- EXPENSE HISTORY LOG -->
+            <div class="bg-[#262626] p-4 sm:p-6 rounded-lg shadow-xl border border-[#4a4a4a]">
+                <h2 class="text-2xl font-semibold text-white mb-4">Expense Log</h2>
+                <!-- NEW: Search Bar for Expense Log -->
+                <div class="mb-4">
+                    <input type="text" id="expenseSearch" onkeyup="filterExpenseHistory()" placeholder="Search expenses by category or description..."
+                           class="w-full p-3 rounded-lg input-dark">
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-[#4a4a4a]">
+                        <thead class="table-header">
+                            <tr>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Category</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Description</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expenseHistoryTableBody" class="bg-[#1a1a1a] divide-y divide-[#333]">
+                            <!-- Expense history will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+                <p id="expenseLogEmptyState" class="text-center text-gray-500 py-6 hidden">No expense transactions logged yet.</p>
+            </div>
+        </div>
+
+        <!-- 2. PROFIT GRAPH TAB CONTENT -->
+        <div id="content-graph" class="main-tab-content pt-4 hidden">
+            <div class="bg-[#262626] p-4 sm:p-6 rounded-xl shadow-xl border border-[#4a4a4a]">
+                <h2 class="text-2xl font-semibold text-white mb-4">Monthly Net Profit Trend</h2>
+                <div class="relative h-96">
+                    <canvas id="profitChartCanvas"></canvas>
+                </div>
+                <p id="chartEmptyState" class="text-center text-gray-500 py-6 hidden">
+                    Not enough data to draw the profit chart. Log sales and expenses across multiple months.
+                </p>
+            </div>
+        </div>
+
+        <!-- 3. SETTINGS TAB CONTENT -->
+        <div id="content-settings" class="main-tab-content pt-4 hidden">
+            <div class="bg-[#262626] p-4 sm:p-6 rounded-xl shadow-xl border border-[#4a4a4a]">
+                <h2 class="text-2xl font-semibold text-white mb-6">Application Settings & Data Management</h2>
+                
+                <!-- REMOVED: NEW RECURRING EXPENSE MANAGEMENT SECTION -->
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Export/Import Data Card -->
+                    <div class="p-4 bg-[#1a1a1a] rounded-lg border border-[#4a4a4a]">
+                        <h3 class="text-xl font-bold text-white mb-3 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-save mr-2 text-blue-400"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                            Data Transfer
+                        </h3>
+                        <p class="text-gray-400 mb-4 text-sm">Backup your data or restore from a previous export (includes Recurring Templates).</p>
+                        <div class="flex flex-col space-y-2">
+                            <button onclick="document.getElementById('exportImportModal').classList.remove('hidden'); showTransferTab('export')"
+                                class="action-btn header-btn py-2 px-4 rounded-lg font-semibold text-sm w-full">
+                                Export Data (Backup)
+                            </button>
+                            <button onclick="document.getElementById('exportImportModal').classList.remove('hidden'); showTransferTab('import')"
+                                class="action-btn bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 font-semibold text-sm w-full">
+                                Import Data (Restore)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Clear Data Card -->
+                    <div class="p-4 bg-[#1a1a1a] rounded-lg border border-[#4a4a4a] border-l-4 border-[#dc2626]">
+                        <h3 class="text-xl font-bold text-[#dc2626] mb-3 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2 mr-2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                            Danger Zone
+                        </h3>
+                        <p class="text-gray-400 mb-4 text-sm">Permanently delete ALL application data (Inventory, Sales, Expenses, and Recurring Templates).</p>
+                        <button onclick="document.getElementById('clearDataModal').classList.remove('hidden')"
+                            class="action-btn danger-btn py-2 px-4 rounded-lg font-semibold text-sm w-full">
+                            Clear ALL Data
+                        </button>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Modals -->
+    <!-- 1. Add/Edit Inventory Item Modal (UNCHANGED) -->
+    <div id="addItemModal" class="modal-overlay fixed inset-0 hidden items-center justify-center p-4 z-50">
+        <div class="bg-[#262626] w-full max-w-lg p-6 rounded-xl shadow-2xl relative" onclick="event.stopPropagation()">
+            <div onclick="closeModal('addItemModal')" class="close-btn">&times;</div>
+            <h3 id="modalTitle" class="text-xl font-bold mb-4 text-white">Add New Item</h3>
+            <form id="itemForm">
+                <input type="hidden" id="itemId">
+                <div class="mb-4">
+                    <label for="itemName" class="block text-sm font-medium text-gray-300 mb-1">Item Name</label>
+                    <input type="text" id="itemName" required class="w-full p-3 rounded-lg input-dark">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="mb-4">
+                        <label for="initialStock" class="block text-sm font-medium text-gray-300 mb-1">Initial Stock</label>
+                        <input type="number" id="initialStock" required min="0" class="w-full p-3 rounded-lg input-dark">
+                    </div>
+                    <div class="mb-4">
+                        <label for="purchasePrice" class="block text-sm font-medium text-gray-300 mb-1">Purchase Cost ($)</label>
+                        <input type="number" id="purchasePrice" required min="0" step="0.01" class="w-full p-3 rounded-lg input-dark">
+                    </div>
+                </div>
+                <div class="mb-6">
+                    <label for="salePrice" class="block text-sm font-medium text-gray-300 mb-1">Target Sale Price ($)</label>
+                    <input type="number" id="salePrice" required min="0.01" step="0.01" class="w-full p-3 rounded-lg input-dark">
+                </div>
+                
+                <div class="flex justify-between items-center space-x-3">
+                    <button type="button" id="deleteItemButton" onclick="deleteItem(document.getElementById('itemId').value)"
+                        class="action-btn danger-btn py-2 px-4 rounded-lg font-semibold text-sm hidden">
+                        Delete Item
+                    </button>
+                    <button type="submit" class="action-btn header-btn py-2 px-4 rounded-lg font-semibold">Save Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. Stock Transaction Modal (UNCHANGED) -->
+    <div id="stockModal" class="modal-overlay fixed inset-0 hidden items-center justify-center p-4 z-50" onclick="if(event.target.id === 'stockModal') closeModal('stockModal')">
+        <div class="bg-[#262626] w-full max-w-sm p-6 rounded-xl shadow-2xl relative" onclick="event.stopPropagation()">
+            <div onclick="closeModal('stockModal')" class="close-btn">&times;</div>
+            <h3 id="stockModalTitle" class="text-xl font-bold mb-4 text-white">Adjust Stock</h3>
+            <p class="mb-4 text-gray-300">Adjusting stock for: <strong id="stockItemName" class="text-white"></strong></p>
+            <input type="hidden" id="stockItemId">
+            <input type="hidden" id="stockType">
+            <div class="mb-6">
+                <label for="stockQuantity" class="block text-sm font-medium text-gray-300 mb-1">Quantity</label>
+                <input type="number" id="stockQuantity" required min="1" class="w-full p-3 rounded-lg input-dark">
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeModal('stockModal')" class="action-btn bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 font-semibold">Cancel</button>
+                <button type="button" onclick="processStockAdjustment()" id="stockConfirmButton" class="action-btn bg-white text-black py-2 px-4 rounded-lg hover:bg-gray-200 font-semibold">Confirm Adjustment</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Master Expense Logging Modal (REPLACING ADD EXPENSE/RECURRING MODALS) -->
+    <div id="expenseMasterModal" class="modal-overlay fixed inset-0 hidden items-center justify-center p-4 z-50">
+        <div id="expenseModalContent" class="bg-[#262626] w-full max-w-lg p-6 rounded-xl shadow-2xl relative" onclick="event.stopPropagation()">
+            <div onclick="closeModal('expenseMasterModal')" class="close-btn">&times;</div>
+            <h3 id="expenseModalTitle" class="text-xl font-bold mb-4 text-white">Log Expense Transaction</h3>
+            <!-- Validation Message Area -->
+            <div id="validationMessage" class="p-3 mb-4 rounded-lg bg-red-800 text-white text-sm hidden" role="alert"></div>
+
+            <!-- TEMPLATE MANAGEMENT LIST VIEW (REMOVED) -->
+            <div id="templateListView" class="hidden">
+                <h3 class="text-xl font-bold text-white mb-4">Recurring Templates</h3>
+                <p class="text-gray-400 text-sm mb-4">Edit or delete templates for auto-logged monthly expenses.</p>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-[#4a4a4a]">
+                        <thead class="table-header">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Description</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Day</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recurringTemplateTableBody" class="bg-[#1a1a1a] divide-y divide-[#333]">
+                            <!-- Template list injected here -->
+                        </tbody>
+                    </table>
+                </div>
+                <button onclick="openLogExpenseModal(null, 'new-template')" class="action-btn header-btn py-2 px-4 rounded-lg font-semibold mt-4">
+                    + Add New Template
+                </button>
+                <button onclick="closeModal('expenseMasterModal')" class="action-btn bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 font-semibold mt-4 ml-3">
+                    Close
+                </button>
+            </div>
+
+
+            <form id="masterExpenseForm">
+                <input type="hidden" id="masterExpenseId">
+                <input type="hidden" id="isEditingExpense"> <!-- NEW: Hidden field to distinguish edit vs new template -->
+                <div class="mb-4">
+                    <label for="masterExpenseDate" class="block text-sm font-medium text-gray-300 mb-1">Date of Transaction</label>
+                    <input type="date" id="masterExpenseDate" required class="w-full p-3 rounded-lg input-dark">
+                    <p id="dateWarning" class="text-xs text-red-400 mt-1 hidden">Note: Date is only used for one-time logging. For new templates, the day below is used.</p>
+                </div>
+                <div class="mb-4">
+                    <label for="masterExpenseCategory" class="block text-sm font-medium text-gray-300 mb-1">Category</label>
+                    <select id="masterExpenseCategory" required class="w-full p-3 rounded-lg input-dark appearance-none">
+                        <option value="" disabled selected>Select an expense category</option>
+                        <!-- Options filled by JS -->
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="masterExpenseAmount" class="block text-sm font-medium text-gray-300 mb-1">Amount ($)</label>
+                    <input type="number" id="masterExpenseAmount" required min="0.01" step="0.01" class="w-full p-3 rounded-lg input-dark">
+                </div>
+                <div class="mb-4">
+                    <label for="masterExpenseDescription" class="block text-sm font-medium text-gray-300 mb-1">Description (Required for Templates)</label>
+                    <input type="text" id="masterExpenseDescription" class="w-full p-3 rounded-lg input-dark" placeholder="e.g., Q3 Electric Bill, Office Rent">
+                </div>
+
+                <!-- Recurring/One-Time Toggle -->
+                <div class="mb-6 p-3 rounded-lg bg-[#1a1a1a] border border-[#4a4a4a]">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="isRecurring" class="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500" onchange="toggleRecurringOptions()">
+                        <label for="isRecurring" class="ml-2 block text-sm font-medium text-white">Is this a Monthly Recurring Payment?</label>
+                    </div>
+                    
+                    <!-- Recurring-Specific Options -->
+                    <div id="recurringOptions" class="mt-3 pl-6 hidden">
+                        <label for="recurringDayOfMonth" class="block text-sm font-medium text-gray-300 mb-1">Day of Month (1-28)</label>
+                        <input type="number" id="recurringDayOfMonth" required min="1" max="28" value="1" class="w-full p-3 rounded-lg input-dark">
+                        <p class="text-xs text-gray-500 mt-1">If this is a new template, the expense will be auto-logged on or after this day monthly.</p>
+                        <!-- NEW POPUP PROMPT -->
+                        <div id="recurringWarningBox" class="mt-3 p-3 bg-blue-900/50 rounded-lg hidden">
+                            <p class="text-xs font-semibold text-blue-300">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info inline-block mr-1"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                                Template Mode: The **Date of Transaction** above is ignored. Logging will occur automatically on or after **Day of Month** each month.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-between items-center space-x-3">
+                    <!-- Delete button is used for deleting existing one-time expenses or templates -->
+                    <button type="button" id="deleteTemplateButton" 
+                        class="action-btn danger-btn py-2 px-4 rounded-lg font-semibold text-sm hidden">
+                        Delete
+                    </button>
+                    <!-- Button text is dynamically set in toggleRecurringOptions/openLogExpenseModal -->
+                    <button type="submit" id="saveExpenseButton" class="action-btn header-btn py-2 px-4 rounded-lg font-semibold">Log Expense</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- 4. Clear Data Confirmation Modal (UNCHANGED) -->
+    <div id="clearDataModal" class="modal-overlay fixed inset-0 hidden items-center justify-center p-4 z-50" onclick="if(event.target.id === 'clearDataModal') closeModal('clearDataModal')">
+        <div class="bg-[#262626] w-full max-w-sm p-6 rounded-xl shadow-2xl relative border-t-8 border-[#dc2626]" onclick="event.stopPropagation()">
+            <div onclick="closeModal('clearDataModal')" class="close-btn">&times;</div>
+            <h3 class="text-2xl font-bold mb-3 text-[#dc2626]">DANGER: Clear All Data</h3>
+            <p class="text-gray-300 mb-6">Are you **absolutely sure** you want to permanently delete ALL application data? This includes Inventory, Sales, Expenses, AND Recurring Templates. This action cannot be undone.</p>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeModal('clearDataModal')" class="action-btn bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 font-semibold">Cancel</button>
+                <button type="button" onclick="clearAllData()" class="action-btn danger-btn text-white py-2 px-4 rounded-lg font-semibold">Yes, Delete All Data</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. Export/Import Modal (UNCHANGED) -->
+    <div id="exportImportModal" class="modal-overlay fixed inset-0 hidden items-center justify-center p-4 z-50" onclick="if(event.target.id === 'exportImportModal') closeModal('exportImportModal')">
+        <div class="bg-[#262626] w-full max-w-4xl p-6 rounded-xl shadow-2xl relative" onclick="event.stopPropagation()">
+            <div onclick="closeModal('exportImportModal')" class="close-btn">&times;</div>
+            <h3 class="text-xl font-bold mb-4 text-white">Data Transfer (Inventory, Sales, Expenses & Templates)</h3>
+            
+            <div class="flex border-b border-[#4a4a4a] mb-4">
+                <button id="exportTabButton" class="tab-button active py-2 px-4 mr-4" onclick="showTransferTab('export')">Export Data</button>
+                <button id="importTabButton" class="tab-button py-2 px-4" onclick="showTransferTab('import')">Import Data</button>
+            </div>
+            
+            <!-- Export Content -->
+            <div id="exportTab" class="transfer-tab-content">
+                <p class="text-sm text-gray-300 mb-3">The output below contains Inventory, Sales History, Expense Records, and Recurring Templates, clearly separated by headers.</p>
+                <textarea id="csvOutput" rows="15" readonly class="w-full p-3 rounded-lg font-mono text-xs input-dark"></textarea>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button type="button" onclick="downloadCSVFile()" class="action-btn bg-gray-600 text-white py-2 px-3 rounded-lg hover:bg-gray-700 font-semibold text-sm">
+                        Download File
+                    </button>
+                    <button type="button" onclick="copyCSVToClipboard()" class="action-btn header-btn py-2 px-3 rounded-lg font-semibold text-sm">
+                        Copy to Clipboard
+                    </button>
+                </div>
+                <p id="copyMessage" class="text-green-400 mt-2 hidden text-right text-sm">Copied to clipboard!</p>
+            </div>
+
+            <!-- Import Content -->
+            <div id="importTab" class="transfer-tab-content hidden">
+                <div class="flex flex-col sm:flex-row gap-4 mb-4">
+                    <div class="flex-1">
+                        <h4 class="text-lg font-semibold text-white mb-2">Paste CSV Data</h4>
+                        <p class="text-sm text-gray-400 mb-1">Paste combined CSV data here.</p>
+                        <textarea id="csvInput" rows="10" placeholder="Paste your combined CSV data here..." class="w-full p-3 rounded-lg font-mono text-xs input-dark"></textarea>
+                    </div>
+                    <div class="flex-1">
+                        <h4 class="text-lg font-semibold text-white mb-2">Upload CSV File</h4>
+                        <p class="text-sm text-gray-400 mb-1">Select a CSV file from your device.</p>
+                        <input type="file" id="csvFileInput" accept=".csv" class="w-full py-2 text-white bg-gray-700 rounded-lg">
+                        <p id="fileMessage" class="text-gray-400 mt-2 text-sm">No file selected.</p>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">Note: Inventory is updated/created. Sales History, Expenses, and Recurring Templates are replaced entirely.</p>
+                <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="handleImport()" class="action-btn header-btn py-2 px-4 rounded-lg font-semibold">Import & Save Data</button>
+                </div>
+                <p id="importMessage" class="text-[#dc2626] mt-2 hidden text-right text-sm">Error processing import data.</p>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- CORE LOGIC SCRIPT -->
+    <script>
+        // Global variables for local storage keys
+        const INVENTORY_KEY = 'localInventory';
+        const SALES_KEY = 'localSalesLog';
+        const EXPENSES_KEY = 'localExpensesLog';
+        const RECURRING_EXPENSES_KEY = 'localRecurringExpenses'; // NEW KEY FOR TEMPLATES
+
+        let fullInventoryList = []; 
+        let salesHistory = [];
+        let expenseHistory = []; 
+        let recurringExpenses = []; // NEW ARRAY FOR RECURRING TEMPLATES
+        let profitChartInstance = null;
+
+        const EXPENSE_CATEGORIES = [
+            'Rent/Mortgage',
+            'Utilities (Electric, Water, Gas)',
+            'Marketing/Advertising',
+            'Software/Subscriptions',
+            'Wages/Salaries',
+            'Office Supplies',
+            'Transportation/Fuel',
+            'Taxes/Fees',
+            'Miscellaneous',
+        ];
+
+        // --- DATA ACCESS LAYER (Local Storage) ---
+
+        function loadData() {
+            try {
+                const inventoryData = localStorage.getItem(INVENTORY_KEY);
+                const salesData = localStorage.getItem(SALES_KEY);
+                const expenseData = localStorage.getItem(EXPENSES_KEY);
+                const recurringData = localStorage.getItem(RECURRING_EXPENSES_KEY); // Load recurring templates
+                
+                fullInventoryList = inventoryData ? JSON.parse(inventoryData) : [];
+                salesHistory = salesData ? JSON.parse(salesData) : [];
+                expenseHistory = expenseData ? JSON.parse(expenseData) : [];
+                recurringExpenses = recurringData ? JSON.parse(recurringData) : []; // Parse recurring templates
+                
+                // Sorting
+                fullInventoryList.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                salesHistory.sort((a, b) => b.timestamp - a.timestamp);
+                expenseHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            } catch (e) {
+                console.error("Error reading from localStorage:", e);
+                fullInventoryList = [];
+                salesHistory = [];
+                expenseHistory = [];
+                recurringExpenses = [];
+            }
+            
+            // NEW: Check and log monthly expenses
+            checkAndAutoLogMonthlyExpenses();
+
+            // Re-render ALL UI sections after loading
+            renderInventoryTable(fullInventoryList);
+            updateInventoryDashboard(fullInventoryList, expenseHistory);
+            renderSalesHistory(salesHistory);
+            renderExpenseHistory(expenseHistory);
+            
+            // Clear search bars on load to ensure full lists are shown initially
+            document.getElementById('inventorySearch').value = '';
+            document.getElementById('salesSearch').value = '';
+            document.getElementById('expenseSearch').value = '';
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem(INVENTORY_KEY, JSON.stringify(fullInventoryList));
+                localStorage.setItem(SALES_KEY, JSON.stringify(salesHistory));
+                localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenseHistory));
+                localStorage.setItem(RECURRING_EXPENSES_KEY, JSON.stringify(recurringExpenses)); // Save recurring templates
+            } catch (e) {
+                console.error("Error writing to localStorage:", e);
+                console.error("Warning: Could not save data locally."); 
+            }
+        }
+        
+        // --- UTILITIES ---
+
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).substring(2);
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+        }
+        
+        /**
+         * Converts a date string (YYYY-MM-DD) to a readable format (e.g., Nov 27, 2025).
+         */
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            // Add one day to account for UTC timezone shift on date-only strings
+            date.setDate(date.getDate() + 1); 
+            return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+        
+        // --- NEW AUTO-LOGGING LOGIC (UNCHANGED) ---
+
+        /**
+         * Checks if recurring monthly expenses have been logged for the current month. 
+         * If not, it automatically logs them. Runs on app load.
+         */
+        function checkAndAutoLogMonthlyExpenses() {
+            if (!recurringExpenses || recurringExpenses.length === 0) return;
+
+            const today = new Date();
+            const currentYearMonth = today.toISOString().slice(0, 7); // YYYY-MM
+            const todayDay = today.getDate();
+            let changesMade = false;
+
+            recurringExpenses.forEach(template => {
+                const templateId = template.id;
+                
+                // 1. Check if this expense has already been logged for the current month
+                const alreadyLogged = expenseHistory.some(expense => {
+                    // Match by the recurring template ID AND check the month/year of the expense date
+                    return expense.recurringTemplateId === templateId &&
+                           expense.date.startsWith(currentYearMonth);
+                });
+
+                if (!alreadyLogged) {
+                    const recurrenceDay = Number(template.dayOfMonth);
+
+                    // 2. Only auto-log if the current day is equal to or past the recurrence day
+                    if (todayDay >= recurrenceDay) {
+                        
+                        // Set the expense date to the recurrence day of the current month
+                        const logDate = new Date(today.getFullYear(), today.getMonth(), recurrenceDay);
+                        const logDateISO = logDate.toISOString().split('T')[0];
+
+                        const newExpense = {
+                            id: generateId(),
+                            date: logDateISO,
+                            category: template.category,
+                            amount: Number(template.amount),
+                            description: `[AUTO] ${template.description}`,
+                            timestamp: Date.now(),
+                            isRecurring: true,
+                            recurringTemplateId: templateId // Link to the template
+                        };
+
+                        expenseHistory.push(newExpense);
+                        console.log(`[Auto-Log] Logged monthly expense: ${template.description} for ${logDateISO}`);
+                        changesMade = true;
+                    }
+                }
+            });
+
+            if (changesMade) {
+                // Sort history to put new logs at the top
+                expenseHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+            }
+        }
+
+
+        // --- TAB & MOBILE MENU LOGIC (UNCHANGED) ---
+
+        /**
+         * Toggles the visibility of the mobile navigation menu.
+         */
+        window.toggleMobileMenu = function() {
+            const menu = document.getElementById('mobileMenu');
+            menu.classList.toggle('active');
+        };
+
+        /**
+         * Shows the selected main content tab and updates the navigation link active state.
+         * Closes the mobile menu afterward.
+         */
+        window.showMainTab = function(tabName) {
+            document.querySelectorAll('.main-tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            document.querySelectorAll('.menu-link').forEach(button => {
+                button.classList.remove('active-tab');
+            });
+
+            document.getElementById(`content-${tabName}`).classList.remove('hidden');
+            document.getElementById(`nav-${tabName}`).classList.add('active-tab');
+            
+            toggleMobileMenu(); // Close the menu after navigation
+        };
+
+        // --- DASHBOARD RENDERING FUNCTIONS (EMOJI REMOVED) ---
+
+        function renderInventoryTable(items) {
+            const tableBody = document.getElementById('inventoryTableBody');
+            tableBody.innerHTML = '';
+            
+            if (items.length === 0) {
+                document.getElementById('inventoryEmptyState').classList.remove('hidden');
+                return;
+            } else {
+                document.getElementById('inventoryEmptyState').classList.add('hidden');
+            }
+
+            items.forEach(item => {
+                let stockContent;
+                const stockStatusClass = item.stock > 0 ? 'text-white' : 'text-[#dc2626]'; 
+                if (item.stock > 0) {
+                    stockContent = `<span class="font-bold ${stockStatusClass}">${item.stock}</span>`;
+                } else {
+                    stockContent = `<span class="font-bold ${stockStatusClass}">OUT</span>`;
+                }
+
+                const row = `
+                    <tr id="item-row-${item.id}">
+                        <td class="px-3 py-3 whitespace-nowrap text-sm font-medium text-white">${item.name}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${stockContent}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${formatCurrency(item.purchasePrice)}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${formatCurrency(item.salePrice)}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm font-medium flex gap-2">
+                            <button onclick="openStockModal('${item.id}', 'add')" class="action-btn bg-gray-600 text-white p-2 rounded-lg hover:bg-gray-700 text-xs">Add</button>
+                            <button onclick="openStockModal('${item.id}', 'sell')" class="action-btn danger-btn text-white p-2 rounded-lg text-xs">Sell</button>
+                            <button onclick="openAddEditModal('${item.id}')" class="text-gray-400 hover:text-white p-2 text-xs">Edit</button>
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        /**
+         * Calculates and renders the combined dashboard metrics, including net profit.
+         * @param {Array} items - Inventory list.
+         * @param {Array} expenses - Expense history list.
+         */
+        function updateInventoryDashboard(items, expenses) {
+            let totalStock = 0;
+            let totalInventoryCostValue = 0;
+            let totalRealizedProfit = 0;
+            let totalPotentialProfit = 0;
+            let totalLoggedExpenses = 0;
+
+            // 1. Calculate Inventory/Sales Metrics
+            items.forEach(item => {
+                const stock = Number(item.stock) || 0;
+                const purchasePrice = Number(item.purchasePrice) || 0;
+                const salePrice = Number(item.salePrice) || 0;
+                const unitProfit = salePrice - purchasePrice;
+                const realizedProfit = Number(item.realizedProfit) || 0;
+
+                totalStock += stock;
+                totalInventoryCostValue += stock * purchasePrice;
+                totalRealizedProfit += realizedProfit;
+                totalPotentialProfit += stock * unitProfit;
+            });
+            
+            // 2. Calculate Expense Metrics
+            expenses.forEach(expense => {
+                totalLoggedExpenses += Number(expense.amount) || 0;
+            });
+
+            // 3. Calculate Final Profit
+            const totalNetProfit = totalRealizedProfit - totalLoggedExpenses;
+            const profitColor = totalNetProfit >= 0 ? "#10B981" : "#DC2626"; // Green for profit, Red for loss
+
+            // Emojis replaced with clean text labels and a small styled span
+            const dashboardHTML = [
+                // Icon SVGs or placeholders instead of Emojis
+                { title: "Total Stock Units", value: totalStock, color: "#60A5FA", icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-package"><path d="m7.5 4.27 9 5.15"/><path d="m21 12-9-5.15-9 5.15 9 5.15 9-5.15Z"/><path d="m3.33 12.5 5.43 3.16"/><path d="M12 18.25v5.03"/><path d="m20.7 12.5-5.43 3.16"/></svg>' },
+                { title: "Inventory Cost Value", value: formatCurrency(totalInventoryCostValue), color: "#3B82F6", icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-credit-card"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>' },
+                { title: "Potential Profit (Inventory)", value: formatCurrency(totalPotentialProfit), color: "#F59E0B", icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>' }, 
+                { title: "Total Realized Profit (Sales)", value: formatCurrency(totalRealizedProfit), color: "#059669", icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-line-chart"><path d="M3 3v18h18"/><path d="m18 7-5 5-4-4-5 5"/></svg>' },
+                { title: "Total Logged Expenses", value: formatCurrency(totalLoggedExpenses), color: "#EF4444", icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-receipt-text"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2"/><path d="M8 7h8"/><path d="M8 12h8"/><path d="M8 17h8"/></svg>' },
+                { 
+                    title: "TOTAL BUSINESS PROFIT (Net)", 
+                    value: formatCurrency(totalNetProfit), 
+                    color: profitColor, 
+                    icon: totalNetProfit >= 0 ? '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x-circle"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>'
+                }
+            ].map(metric => `
+                <div class="dashboard-card p-4 rounded-xl shadow-md border-l-4 border-[${metric.color}]">
+                    <div class="flex items-center justify-between">
+                        <p class="text-sm font-medium text-gray-400">${metric.title}</p>
+                        <span class="text-white" style="color: ${metric.color};">${metric.icon}</span>
+                    </div>
+                    <p class="mt-1 text-xl sm:text-2xl font-bold text-white">${metric.value}</p>
+                </div>
+            `).join('');
+
+            document.getElementById('inventoryDashboardMetrics').innerHTML = dashboardHTML;
+        }
+
+        function renderSalesHistory(sales) {
+            const tableBody = document.getElementById('salesHistoryTableBody');
+            tableBody.innerHTML = '';
+
+            if (sales.length === 0) {
+                document.getElementById('salesEmptyState').classList.remove('hidden');
+                return;
+            } else {
+                document.getElementById('salesEmptyState').classList.add('hidden');
+            }
+
+            sales.forEach(sale => {
+                const timestamp = new Date(sale.timestamp).toLocaleString();
+                const unitProfit = sale.salePrice - (sale.purchasePrice || 0);
+
+                const row = `
+                    <tr>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm font-medium text-white">${sale.itemName}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-red-400 font-semibold">${sale.quantity}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-green-400 font-semibold">${formatCurrency(unitProfit)}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-500">${timestamp}</td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+        
+        // --- INVENTORY MODAL LOGIC (UNCHANGED) ---
+
+        window.closeModal = function(id) {
+            document.getElementById(id).classList.add('hidden');
+        };
+
+        window.openAddEditModal = function(itemId) {
+            const modal = document.getElementById('addItemModal');
+            const form = document.getElementById('itemForm');
+            const deleteBtn = document.getElementById('deleteItemButton');
+            form.reset();
+            document.getElementById('initialStock').disabled = false;
+            document.getElementById('itemId').value = '';
+            deleteBtn.classList.add('hidden');
+
+            if (itemId) {
+                const item = fullInventoryList.find(i => i.id === itemId);
+                if (!item) return;
+
+                document.getElementById('itemId').value = item.id;
+                document.getElementById('itemName').value = item.name;
+                document.getElementById('initialStock').value = item.stock; 
+                document.getElementById('initialStock').disabled = true;
+                document.getElementById('purchasePrice').value = item.purchasePrice;
+                document.getElementById('salePrice').value = item.salePrice;
+                document.getElementById('modalTitle').textContent = `Edit Item: ${item.name}`;
+                deleteBtn.classList.remove('hidden');
+            } else {
+                document.getElementById('modalTitle').textContent = `Add New Item`;
+            }
+
+            modal.classList.remove('hidden');
+        };
+
+        window.deleteItem = function(itemId) {
+            // Using console.warn instead of confirm
+            console.warn(`Confirming deletion of item with ID: ${itemId}. This action cannot be undone.`); 
+            const userConfirmed = true; // Assume confirmation if the function is called, but ideally use a custom modal
+            if (!itemId || !userConfirmed) return;
+
+            const initialLength = fullInventoryList.length;
+            fullInventoryList = fullInventoryList.filter(item => item.id !== itemId);
+            salesHistory = salesHistory.filter(sale => sale.itemId !== itemId);
+            if (fullInventoryList.length < initialLength) {
+                saveData();
+                loadData();
+                closeModal('addItemModal');
+                console.log(`Item with ID ${itemId} successfully deleted.`);
+            } else {
+                console.warn(`Item with ID ${itemId} not found for deletion.`);
+            }
+        };
+
+        window.openStockModal = function(itemId, type) {
+            const item = fullInventoryList.find(i => i.id === itemId);
+            if (!item) return;
+
+            document.getElementById('stockItemId').value = itemId;
+            document.getElementById('stockItemName').textContent = item.name;
+            document.getElementById('stockType').value = type;
+            document.getElementById('stockQuantity').value = 1;
+            document.getElementById('stockQuantity').min = 1;
+            
+            const titleElement = document.getElementById('stockModalTitle');
+            const confirmButton = document.getElementById('stockConfirmButton');
+
+            if (type === 'sell') {
+                titleElement.textContent = `Sell Item: ${item.name}`;
+                confirmButton.textContent = 'Confirm Sale';
+                confirmButton.classList.remove('bg-white', 'text-black');
+                confirmButton.classList.add('danger-btn');
+            } else {
+                titleElement.textContent = `Add Stock: ${item.name}`;
+                confirmButton.textContent = 'Confirm Purchase';
+                confirmButton.classList.remove('danger-btn');
+                confirmButton.classList.add('bg-white', 'text-black');
+            }
+
+            document.getElementById('stockModal').classList.remove('hidden');
+        }
+
+        window.processStockAdjustment = function() {
+            const itemId = document.getElementById('stockItemId').value;
+            const type = document.getElementById('stockType').value;
+            const quantity = Number(document.getElementById('stockQuantity').value);
+
+            if (quantity <= 0) return;
+
+            const itemIndex = fullInventoryList.findIndex(item => item.id === itemId);
+            if (itemIndex === -1) return;
+
+            const item = fullInventoryList[itemIndex];
+
+            if (type === 'sell') {
+                if (item.stock < quantity) {
+                    // Using console.warn instead of alert as per instructions
+                    console.warn(`Cannot sell ${quantity}. Only ${item.stock} in stock.`);
+                    // Ideally, use a custom modal notification here instead of just console.warn
+                    return;
+                }
+                item.stock -= quantity;
+                
+                const unitProfit = item.salePrice - item.purchasePrice;
+                item.realizedProfit = (item.realizedProfit || 0) + (quantity * unitProfit);
+
+                salesHistory.push({
+                    id: generateId(),
+                    itemId: itemId,
+                    itemName: item.name,
+                    quantity: quantity,
+                    purchasePrice: item.purchasePrice, 
+                    salePrice: item.salePrice,
+                    timestamp: Date.now()
+                });
+
+            } else {
+                item.stock += quantity;
+            }
+            
+            saveData();
+            loadData();
+            closeModal('stockModal');
+        }
+
+        document.getElementById('itemForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const itemId = document.getElementById('itemId').value;
+            const name = document.getElementById('itemName').value;
+            const initialStock = Number(document.getElementById('initialStock').value);
+            const purchasePrice = Number(document.getElementById('purchasePrice').value);
+            const salePrice = Number(document.getElementById('salePrice').value);
+
+            if (itemId) {
+                const itemIndex = fullInventoryList.findIndex(item => item.id === itemId);
+                if (itemIndex !== -1) {
+                    const item = fullInventoryList[itemIndex];
+                    item.name = name;
+                    item.purchasePrice = purchasePrice;
+                    item.salePrice = salePrice;
+                }
+            } else {
+                const newItem = {
+                    id: generateId(),
+                    name: name,
+                    stock: initialStock,
+                    purchasePrice: purchasePrice,
+                    salePrice: salePrice,
+                    realizedProfit: 0,
+                };
+                fullInventoryList.push(newItem);
+            }
+            
+            saveData();
+            loadData();
+            closeModal('addItemModal');
+            document.getElementById('itemForm').reset();
+        });
+
+        // --- FILTERING (ADDED SALES AND EXPENSE FILTERS) ---
+        
+        /**
+         * Filters the Inventory table based on item name search.
+         */
+        window.filterInventory = function() {
+            const searchText = document.getElementById('inventorySearch').value.toLowerCase();
+            
+            const filteredItems = fullInventoryList.filter(item => 
+                item.name.toLowerCase().includes(searchText)
+            );
+            renderInventoryTable(filteredItems);
+        };
+        
+        /**
+         * Filters the Sales History table based on item name search.
+         */
+        window.filterSalesHistory = function() {
+            const searchText = document.getElementById('salesSearch').value.toLowerCase();
+            
+            const filteredSales = salesHistory.filter(sale => 
+                sale.itemName.toLowerCase().includes(searchText)
+            );
+            renderSalesHistory(filteredSales);
+        };
+        
+        /**
+         * Filters the Expense Log table based on category or description search.
+         */
+        window.filterExpenseHistory = function() {
+            const searchText = document.getElementById('expenseSearch').value.toLowerCase();
+            
+            const filteredExpenses = expenseHistory.filter(expense => {
+                const description = expense.description ? expense.description.toLowerCase() : '';
+                const category = expense.category ? expense.category.toLowerCase() : '';
+                
+                // Search in both description and category
+                return description.includes(searchText) || category.includes(searchText);
+            });
+            renderExpenseHistory(filteredExpenses);
+        };
+        
+        // --- EXPENSE LOGIC (COMBINED ONE-TIME & RECURRING) ---
+        
+        /**
+         * Toggles the visibility and requirement of the Day of Month input.
+         * Also controls the state of the one-time date input.
+         */
+        window.toggleRecurringOptions = function() {
+            const isRecurringChecked = document.getElementById('isRecurring').checked;
+            const recurringOptions = document.getElementById('recurringOptions');
+            const recurringDayInput = document.getElementById('recurringDayOfMonth');
+            const dateInput = document.getElementById('masterExpenseDate');
+            const dateLabel = document.querySelector('label[for="masterExpenseDate"]');
+            const recurringWarningBox = document.getElementById('recurringWarningBox');
+            const isEditing = document.getElementById('isEditingExpense').value === 'true';
+            
+            // Clear validation message whenever options change
+            document.getElementById('validationMessage').classList.add('hidden');
+            document.getElementById('validationMessage').textContent = "";
+
+
+            if (isRecurringChecked) {
+                // Clear the value and disable one-time date input
+                dateInput.value = ''; // CLEAR DATE VALUE
+                dateInput.disabled = true;
+                dateInput.classList.add('opacity-50', 'bg-gray-700', 'cursor-not-allowed');
+                dateLabel.classList.add('text-gray-500');
+                
+                // Set required to false when recurring is checked
+                dateInput.required = false; 
+
+                // Show and enable Recurring options + Warning Box
+                recurringOptions.classList.remove('hidden');
+                recurringDayInput.required = true;
+                recurringWarningBox.classList.remove('hidden'); // Show warning
+                
+            } else {
+                // Enable one-time date input
+                dateInput.disabled = false;
+                dateInput.classList.remove('opacity-50', 'bg-gray-700', 'cursor-not-allowed');
+                dateLabel.classList.remove('text-gray-500');
+                
+                // Set required to true when recurring is NOT checked (for one-time log)
+                dateInput.required = true;
+                
+                // Set default date for one-time log if empty (only if not editing and value is cleared)
+                if (!document.getElementById('masterExpenseId').value) {
+                    dateInput.value = new Date().toISOString().split('T')[0];
+                }
+
+
+                // Hide and disable Recurring options + Warning Box
+                recurringOptions.classList.add('hidden');
+                recurringDayInput.required = false;
+                recurringWarningBox.classList.add('hidden'); // Hide warning
+            }
+
+            // Update button text based on mode
+            const entityId = document.getElementById('masterExpenseId').value;
+            // Check if the entity ID corresponds to an expense record (not a template)
+            const currentEntityIsExpense = expenseHistory.some(e => e.id === entityId); 
+            
+            if (entityId && currentEntityIsExpense) {
+                // Editing an existing expense record (must be non-recurring/manual log to appear in table)
+                document.getElementById('saveExpenseButton').textContent = 'Update Expense';
+                document.getElementById('deleteTemplateButton').textContent = 'Delete Expense';
+                document.getElementById('deleteTemplateButton').classList.remove('hidden');
+                document.getElementById('deleteTemplateButton').onclick = () => deleteExpenseOrTemplate(entityId, true); // Delete Expense Record
+            } else if (entityId) {
+                // Editing an existing template
+                document.getElementById('saveExpenseButton').textContent = 'Save Recurring Template';
+                document.getElementById('deleteTemplateButton').textContent = 'Delete Template';
+                document.getElementById('deleteTemplateButton').classList.remove('hidden');
+                document.getElementById('deleteTemplateButton').onclick = () => deleteExpenseOrTemplate(entityId, false); // Delete Template (Cascades to delete logs)
+            } else {
+                // New Log/Template
+                document.getElementById('saveExpenseButton').textContent = isRecurringChecked ? 'Save Recurring Template' : 'Log Expense';
+                document.getElementById('deleteTemplateButton').classList.add('hidden');
+            }
+        };
+
+        /**
+         * Renders the list of recurring expense templates inside the modal.
+         * NOTE: This is no longer used for the UI, but kept as a stub for potential re-use.
+         */
+        window.renderTemplateManagementList = function() {
+            // Functionality removed from UI.
+            const tableBody = document.getElementById('recurringTemplateTableBody');
+            tableBody.innerHTML = `<tr><td colspan="4" class="px-3 py-4 text-center text-gray-500">Template list functionality removed from this view.</td></tr>`;
+        }
+
+        /**
+         * Opens the master expense modal, handling new logs, expense edits, and template edits/management.
+         * @param {string | null} [entityId=null] - ID of the expense or recurring template to edit.
+         * @param {string | null} [type=null] - 'expense', 'template', or null.
+         */
+        window.openLogExpenseModal = function(entityId = null, type = null) {
+            const modal = document.getElementById('expenseMasterModal');
+            const form = document.getElementById('masterExpenseForm');
+            const listView = document.getElementById('templateListView');
+            const isRecurringCheckbox = document.getElementById('isRecurring');
+            const deleteBtn = document.getElementById('deleteTemplateButton');
+            const expenseIdField = document.getElementById('masterExpenseId');
+            const isEditingExpenseField = document.getElementById('isEditingExpense');
+            
+            // Clear prior state and validation messages
+            form.reset();
+            deleteBtn.classList.add('hidden');
+            expenseIdField.value = '';
+            isEditingExpenseField.value = 'false';
+            document.getElementById('validationMessage').classList.add('hidden');
+            document.getElementById('validationMessage').textContent = "";
+            
+            // --- VIEW SWITCHING ---
+            // Removed logic for showing templateListView (since the entry button is gone)
+            // Now always show the form.
+            listView.classList.add('hidden');
+            form.classList.remove('hidden');
+
+
+            // Populate category dropdown
+            const categorySelect = document.getElementById('masterExpenseCategory');
+            categorySelect.innerHTML = '<option value="" disabled selected>Select an expense category</option>';
+            EXPENSE_CATEGORIES.forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat;
+                option.textContent = cat;
+                categorySelect.appendChild(option);
+            });
+            
+            // --- EDITING EXISTING ENTITY ---
+            if (entityId) {
+                if (type === 'template') {
+                    // EDITING A RECURRING TEMPLATE (switched from list view or expense log)
+                    const template = recurringExpenses.find(t => t.id === entityId);
+                    if (!template) return;
+
+                    expenseIdField.value = template.id;
+                    document.getElementById('masterExpenseAmount').value = template.amount;
+                    document.getElementById('masterExpenseCategory').value = template.category;
+                    document.getElementById('masterExpenseDescription').value = template.description;
+                    
+                    isRecurringCheckbox.checked = true;
+                    document.getElementById('recurringDayOfMonth').value = template.dayOfMonth;
+                    document.getElementById('expenseModalTitle').textContent = `Edit Recurring Template: ${template.description}`;
+                    deleteBtn.classList.remove('hidden');
+                    isEditingExpenseField.value = 'false'; 
+                    // Set delete button to delete the Template Rule (cascades to delete all logs)
+                    deleteBtn.onclick = () => deleteExpenseOrTemplate(template.id, false); 
+
+                } else if (type === 'expense') {
+                    // EDITING A ONE-TIME EXPENSE (from expense log table)
+                    const expense = expenseHistory.find(e => e.id === entityId);
+                    if (!expense) return;
+                    
+                    expenseIdField.value = expense.id;
+                    document.getElementById('masterExpenseDate').value = expense.date;
+                    document.getElementById('masterExpenseAmount').value = expense.amount;
+                    document.getElementById('masterExpenseCategory').value = expense.category;
+                    
+                    const description = expense.description.startsWith('[AUTO] ') ? expense.description.substring(7) : expense.description;
+                    document.getElementById('masterExpenseDescription').value = description;
+
+                    // Ensure the recurring checkbox is set correctly, but we treat this as a manual log update
+                    isRecurringCheckbox.checked = expense.isRecurring;
+                    
+                    let dayOfMonth = 1;
+                    if (expense.isRecurring && expense.recurringTemplateId) {
+                        const template = recurringExpenses.find(t => t.id === expense.recurringTemplateId);
+                        dayOfMonth = template ? template.dayOfMonth : new Date(expense.date).getDate();
+                    }
+                    document.getElementById('recurringDayOfMonth').value = dayOfMonth;
+
+                    document.getElementById('expenseModalTitle').textContent = `Edit Expense: ${expense.description}`;
+                    deleteBtn.classList.remove('hidden');
+                    isEditingExpenseField.value = 'true';
+                    deleteBtn.onclick = () => deleteExpenseOrTemplate(expense.id, true);
+                }
+                
+            } else {
+                // --- NEW LOG / NEW TEMPLATE (Default state) ---
+                isRecurringCheckbox.checked = false; // Default new log is one-time
+                document.getElementById('expenseModalTitle').textContent = `Log Expense Transaction`;
+                
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('masterExpenseDate').value = today;
+                document.getElementById('recurringDayOfMonth').value = 1;
+            }
+
+            // Ensure correct recurring panel state based on checkbox
+            toggleRecurringOptions();
+            modal.classList.remove('hidden');
+        };
+
+        // Combine Expense Submission Logic (FIXED)
+        document.getElementById('masterExpenseForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const id = document.getElementById('masterExpenseId').value;
+            const isEditingExpense = document.getElementById('isEditingExpense').value === 'true';
+            const isRecurringChecked = document.getElementById('isRecurring').checked;
+            
+            const description = document.getElementById('masterExpenseDescription').value.trim();
+            const amount = Number(document.getElementById('masterExpenseAmount').value);
+            const category = document.getElementById('masterExpenseCategory').value;
+            const date = document.getElementById('masterExpenseDate').value; 
+            const dayOfMonth = Number(document.getElementById('recurringDayOfMonth').value); 
+            
+            const validationMessage = document.getElementById('validationMessage');
+            validationMessage.classList.add('hidden');
+            validationMessage.textContent = "";
+
+            // 1. Basic validation (always required)
+            if (amount <= 0 || !category) {
+                validationMessage.textContent = "Please ensure the amount is positive and a category is selected.";
+                validationMessage.classList.remove('hidden');
+                console.error(validationMessage.textContent);
+                return;
+            }
+
+            // 2. Mode-specific validation
+            if (isRecurringChecked) {
+                // Validation for NEW Template (or editing template)
+                if (!description) { 
+                    validationMessage.textContent = "Description is required when saving a Recurring Template.";
+                    validationMessage.classList.remove('hidden');
+                    console.error(validationMessage.textContent);
+                    return;
+                }
+                if (dayOfMonth < 1 || dayOfMonth > 28) {
+                    validationMessage.textContent = "Please provide a valid Day of Month (1-28).";
+                    validationMessage.classList.remove('hidden');
+                    console.error(validationMessage.textContent);
+                    return;
+                }
+            } else {
+                // Validation for One-Time Expense (or editing expense record)
+                if (!date) {
+                    // This should generally be blocked by HTML5 validation but acts as a safeguard
+                    validationMessage.textContent = "Please select a Date of Transaction for this one-time expense.";
+                    validationMessage.classList.remove('hidden');
+                    console.error(validationMessage.textContent);
+                    return;
+                }
+            }
+
+            // --- 3. Data processing (runs only if validation passed) ---
+            
+            if (isRecurringChecked && !isEditingExpense) {
+                // --- Save/Update RECURRING TEMPLATE ---
+                const templateData = {
+                    id: id || generateId(),
+                    description: description,
+                    amount: amount,
+                    category: category,
+                    dayOfMonth: dayOfMonth,
+                };
+                
+                if (id) {
+                    const index = recurringExpenses.findIndex(t => t.id === id);
+                    if (index !== -1) {
+                        recurringExpenses[index] = templateData;
+                    }
+                } else {
+                    recurringExpenses.push(templateData);
+                }
+                
+                recurringExpenses.sort((a, b) => a.dayOfMonth - b.dayOfMonth);
+
+                console.log(`Recurring template ${id ? 'updated' : 'created'}.`);
+                
+            } else {
+                // --- Log or Update ONE-TIME/EXISTING EXPENSE ---
+                
+                const expenseData = {
+                    id: id || generateId(),
+                    date: date,
+                    category: category,
+                    amount: amount,
+                    description: description, 
+                    timestamp: Date.now(),
+                    // Preserve existing flags if editing an auto-logged expense
+                    isRecurring: isEditingExpense ? expenseHistory.find(e => e.id === id)?.isRecurring || false : false,
+                    recurringTemplateId: isEditingExpense ? expenseHistory.find(e => e.id === id)?.recurringTemplateId || null : null,
+                };
+                
+                if (isEditingExpense) {
+                    const expenseIndex = expenseHistory.findIndex(e => e.id === id);
+                    if (expenseIndex !== -1) {
+                        expenseHistory[expenseIndex] = expenseData;
+                        console.log(`Expense updated.`);
+                    }
+                } else {
+                    expenseHistory.push(expenseData);
+                    console.log(`One-time expense logged.`);
+                }
+            }
+            
+            // 4. Final steps (guaranteed to run if no 'return' was hit)
+            saveData();
+            loadData();
+            closeModal('expenseMasterModal');
+            document.getElementById('masterExpenseForm').reset();
+        });
+
+
+        /**
+         * Generic delete function for both expense records and recurring templates
+         * @param {string} entityId - The ID of the expense record or template.
+         * @param {boolean} [isExpense=false] - True if deleting an expense record, false if deleting a recurring template.
+         */
+        window.deleteExpenseOrTemplate = function(entityId, isExpense = false) {
+            
+            console.warn(`Attempting to delete entity with ID: ${entityId}. Type: ${isExpense ? 'Expense Record' : 'Recurring Template'}`);
+            
+            let initialLength;
+            let success = false;
+            let templateDeleted = false;
+            let logsDeleted = 0;
+
+            // Using custom modal confirmation logic instead of confirm()
+            const deleteMessage = `Are you sure you want to permanently delete this ${isExpense ? 'Expense Record' : 'Recurring Template and all associated logs'}?`;
+            console.warn(deleteMessage); 
+
+            // Simulating confirmation (in a real app, this would be a custom modal)
+            const userConfirmed = true; 
+            if (!userConfirmed) return;
+
+
+            if (isExpense) {
+                // Scenario 1: Deleting a single expense record (Log)
+                initialLength = expenseHistory.length;
+                
+                // Delete the expense log
+                expenseHistory = expenseHistory.filter(expense => expense.id !== entityId);
+                success = expenseHistory.length !== initialLength;
+                
+            } else {
+                // Scenario 2: Deleting a recurring template (Rule) - This is the CASACADING DELETE
+                
+                // A. Delete the Template Rule
+                initialLength = recurringExpenses.length;
+                recurringExpenses = recurringExpenses.filter(t => t.id !== entityId);
+                templateDeleted = recurringExpenses.length !== initialLength;
+                
+                // B. Cascade: Delete ALL associated Expense Logs
+                if (templateDeleted) {
+                    const originalLogLength = expenseHistory.length;
+                    expenseHistory = expenseHistory.filter(expense => expense.recurringTemplateId !== entityId);
+                    logsDeleted = originalLogLength - expenseHistory.length;
+                    success = true; // The primary action (template delete) was successful
+                    console.log(`Cascaded deletion: Removed ${logsDeleted} associated expense logs.`);
+                }
+            }
+            
+            if (success) {
+                saveData();
+                loadData();
+                
+                // Close modal if triggered from inside the edit modal
+                if (!document.getElementById('expenseMasterModal').classList.contains('hidden')) {
+                     closeModal('expenseMasterModal');
+                }
+                
+                let message = `Entity with ID ${entityId} successfully deleted.`;
+                if (templateDeleted) {
+                    message = `Recurring template deleted, and ${logsDeleted} associated expense logs were also removed.`;
+                }
+                console.log(message);
+            } else {
+                console.warn(`Entity with ID ${entityId} not found for deletion.`);
+            }
+        };
+
+
+        /**
+         * Renders the Expense History table at the bottom of the main view.
+         * Includes an "Edit" button for each logged expense.
+         */
+        function renderExpenseHistory(expenses) {
+            const tableBody = document.getElementById('expenseHistoryTableBody');
+            tableBody.innerHTML = '';
+
+            // Check if filtering is active by checking the search bar value
+            const expenseSearchValue = document.getElementById('expenseSearch').value.trim();
+            
+            if (expenses.length === 0) {
+                const emptyState = document.getElementById('expenseLogEmptyState');
+                emptyState.textContent = expenseSearchValue ? `No expense records match "${expenseSearchValue}".` : `No expense transactions logged yet.`;
+                emptyState.classList.remove('hidden');
+                return;
+            } else {
+                document.getElementById('expenseLogEmptyState').classList.add('hidden');
+            }
+
+            expenses.forEach(expense => {
+                // Check if the expense is auto-logged. The original non-auto logs will have a falsy or null recurringTemplateId.
+                const isAutoLogged = !!expense.recurringTemplateId; 
+                const isAuto = isAutoLogged ? `<span title="Auto-Logged Monthly Expense" class="text-xs font-bold text-blue-400"> (AUTO)</span>` : '';
+                
+                let actionButtons;
+
+                if (isAutoLogged) {
+                    // Delete Log now triggers the CASCADING DELETE (isExpense=false) using the template ID 
+                    const templateId = expense.recurringTemplateId;
+                    actionButtons = `
+                        <button onclick="openLogExpenseModal('${templateId}', 'template')" class="text-gray-400 hover:text-white p-2 text-xs">Edit Template</button>
+                        <button onclick="deleteExpenseOrTemplate('${templateId}', false)" class="text-gray-400 hover:text-red-500 p-2 text-xs">Delete Rule</button>
+                    `;
+                    // NOTE: The button is renamed to "Delete Rule" to clarify it's the cascading delete.
+                } else {
+                     // Standard Edit and Delete for manual/one-time logs
+                     actionButtons = `
+                        <button onclick="openLogExpenseModal('${expense.id}', 'expense')" class="text-gray-400 hover:text-white p-2 text-xs">Edit</button>
+                        <button onclick="deleteExpenseOrTemplate('${expense.id}', true)" class="text-gray-400 hover:text-red-500 p-2 text-xs">Delete</button>
+                    `;
+                }
+
+                const row = `
+                    <tr>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-300">${formatDate(expense.date)}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-white">${expense.category}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm text-red-400 font-semibold">${formatCurrency(expense.amount)}</td>
+                        <td class="px-3 py-3 text-sm text-gray-400">${expense.description || 'N/A'} ${isAuto}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-sm font-medium flex gap-2">
+                            ${actionButtons}
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+        
+        // --- RECURRING TEMPLATE LOGIC (NOW ONLY IN MODAL/LOAD) ---
+        
+        /**
+         * Renders the list of recurring expense templates in the settings tab.
+         * NOTE: This function is still present for modularity but is NOT called in the UI anymore.
+         */
+        window.renderRecurringExpenseList = function(recurring) {
+            // This function is no longer needed to render the UI since the list moved, 
+            // but is kept here as a stub for future use if the list returns.
+            // All template management now happens through the 'Manage Recurring Templates' button.
+        }
+
+        // Renamed 'openAddRecurringExpenseModal' to 'openLogExpenseModal' for editing
+        // The dashboard button also calls openLogExpenseModal()
+
+        window.deleteRecurringExpense = function(templateId) {
+            // Note: This function is now redundant, replaced by deleteExpenseOrTemplate, 
+            // but kept as a wrapper to avoid breaking older calls if they existed.
+            return deleteExpenseOrTemplate(templateId, false);
+        };
+
+        // --- CHARTING LOGIC (UNCHANGED) ---
+        function calculateNetProfitOverTime() {
+            const monthlyData = {};
+            const monthFormat = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short' });
+
+            salesHistory.forEach(sale => {
+                const profit = sale.quantity * (sale.salePrice - (sale.purchasePrice || 0));
+                const date = new Date(sale.timestamp);
+                const monthKey = monthFormat.format(date); 
+
+                if (!monthlyData[monthKey]) {
+                    monthlyData[monthKey] = { profit: 0, expenses: 0 };
+                }
+                monthlyData[monthKey].profit += profit;
+            });
+
+            expenseHistory.forEach(expense => {
+                const date = new Date(expense.date);
+                const monthKey = monthFormat.format(date);
+
+                if (!monthlyData[monthKey]) {
+                    monthlyData[monthKey] = { profit: 0, expenses: 0 };
+                }
+                monthlyData[monthKey].expenses += expense.amount;
+            });
+
+            const sortedKeys = Object.keys(monthlyData).sort((a, b) => {
+                const dateA = new Date(a);
+                const dateB = new Date(b);
+                return dateA - dateB;
+            });
+
+            const labels = [];
+            const netProfits = [];
+
+            sortedKeys.forEach(key => {
+                const data = monthlyData[key];
+                const net = data.profit - data.expenses;
+                labels.push(key);
+                netProfits.push(net.toFixed(2));
+            });
+            
+            return { labels, netProfits };
+        }
+        
+        window.renderProfitChart = function() {
+            const { labels, netProfits } = calculateNetProfitOverTime();
+            const canvas = document.getElementById('profitChartCanvas');
+            const emptyState = document.getElementById('chartEmptyState');
+
+            if (labels.length < 2) {
+                if (profitChartInstance) {
+                    profitChartInstance.destroy();
+                    profitChartInstance = null;
+                }
+                emptyState.classList.remove('hidden');
+                canvas.classList.add('hidden');
+                return;
+            } else {
+                emptyState.classList.add('hidden');
+                canvas.classList.remove('hidden');
+            }
+
+            if (profitChartInstance) {
+                profitChartInstance.destroy();
+            }
+
+            const ctx = canvas.getContext('2d');
+            
+            const backgroundColors = netProfits.map(profit => 
+                profit >= 0 ? 'rgba(16, 185, 129, 0.5)' : 'rgba(220, 38, 38, 0.5)' 
+            );
+
+            profitChartInstance = new Chart(ctx, {
+                type: 'bar', 
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Monthly Net Profit / Loss ($)',
+                        data: netProfits,
+                        backgroundColor: backgroundColors,
+                        borderColor: backgroundColors.map(color => color.replace('0.5', '1')),
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, labels: { color: '#ccc' } },
+                        title: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) { label += ': '; }
+                                    if (context.parsed.y !== null) {
+                                        label += formatCurrency(context.parsed.y);
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: function(value) { return formatCurrency(value); }, color: '#ccc' },
+                            grid: { color: 'rgba(74, 74, 74, 0.5)' } 
+                        },
+                        x: {
+                            ticks: { color: '#ccc' },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        };
+
+
+        // --- CLEAR ALL DATA (UNCHANGED) ---
+        window.clearAllData = function() {
+            // Using console.warn instead of confirm
+            console.warn("Attempting to clear all data. This is irreversible."); 
+
+            // Simulating confirmation (in a real app, this would be a custom modal)
+            const userConfirmed = true; 
+            if (!userConfirmed) return;
+
+            localStorage.removeItem(INVENTORY_KEY);
+            localStorage.removeItem(SALES_KEY);
+            localStorage.removeItem(EXPENSES_KEY);
+            localStorage.removeItem(RECURRING_EXPENSES_KEY); // NEW: Clear recurring templates
+            
+            loadData();
+            if (profitChartInstance) {
+                profitChartInstance.destroy();
+                profitChartInstance = null;
+            }
+            closeModal('clearDataModal');
+            console.log("All local data has been cleared.");
+        };
+
+        // --- EXPORT/IMPORT MODAL LOGIC (UNCHANGED) ---
+
+        window.showTransferTab = function(tabName) {
+            document.getElementById('exportTab').classList.add('hidden');
+            document.getElementById('importTab').classList.add('hidden');
+            
+            // NOTE: The class manipulation for 'active' styles is handled in CSS, 
+            // but the class names in the original HTML were missing the standard utility classes.
+            // Keeping only the ID logic for functionality.
+
+            if (tabName === 'export') {
+                document.getElementById('exportTab').classList.remove('hidden');
+                document.getElementById('exportTabButton').classList.add('active');
+                document.getElementById('importTabButton').classList.remove('active');
+                document.getElementById('csvOutput').value = exportAllDataToCSV();
+            } else if (tabName === 'import') {
+                document.getElementById('importTab').classList.remove('hidden');
+                document.getElementById('importTabButton').classList.add('active');
+                document.getElementById('exportTabButton').classList.remove('active');
+            }
+        }
+        
+        // --- EXPORT LOGIC (UNCHANGED) ---
+        
+        function getInventoryCSVSection() {
+            if (fullInventoryList.length === 0) return "ID,Name,Stock,PurchasePrice,SalePrice,UnitProfit,TotalCostValue,PotentialProfit,RealizedProfit\n";
+
+            const headers = ["ID", "Name", "Stock", "PurchasePrice", "SalePrice", "UnitProfit", "TotalCostValue", "PotentialProfit", "RealizedProfit"];
+            let csv = headers.join(',') + '\n';
+
+            fullInventoryList.forEach(item => {
+                const stock = Number(item.stock) || 0;
+                const purchasePrice = Number(item.purchasePrice) || 0;
+                const salePrice = Number(item.salePrice) || 0;
+                const realizedProfit = Number(item.realizedProfit) || 0;
+                
+                const unitProfit = salePrice - purchasePrice;
+                const totalCostValue = stock * purchasePrice;
+                const potentialProfit = stock * unitProfit;
+
+                const nameEscaped = item.name ? `"${item.name.replace(/"/g, '""')}"` : '';
+                
+                const row = [
+                    item.id,
+                    nameEscaped,
+                    stock,
+                    purchasePrice.toFixed(2),
+                    salePrice.toFixed(2),
+                    unitProfit.toFixed(2),
+                    totalCostValue.toFixed(2),
+                    potentialProfit.toFixed(2),
+                    realizedProfit.toFixed(2)
+                ].join(',');
+                csv += row + '\n';
+            });
+            return csv;
+        }
+
+        function getSalesHistoryCSVSection() {
+            if (salesHistory.length === 0) return "ID,ItemID,ItemName,Quantity,PurchasePrice,SalePrice,Timestamp,DateTime\n";
+
+            const headers = ["ID", "ItemID", "ItemName", "Quantity", "PurchasePrice", "SalePrice", "Timestamp", "DateTime"];
+            let csv = headers.join(',') + '\n';
+
+            salesHistory.forEach(sale => {
+                const timestamp = sale.timestamp;
+                const dateTime = new Date(timestamp).toLocaleString('en-US'); 
+                const nameEscaped = sale.itemName ? `"${sale.itemName.replace(/"/g, '""')}"` : '';
+
+                const row = [
+                    sale.id,
+                    sale.itemId,
+                    nameEscaped,
+                    sale.quantity,
+                    (sale.purchasePrice || 0).toFixed(2),
+                    sale.salePrice.toFixed(2),
+                    timestamp,
+                    `"${dateTime}"`
+                ].join(',');
+                csv += row + '\n';
+            });
+            return csv;
+        }
+
+        function getExpenseHistoryCSVSection() {
+            // ADDED IsRecurring and RecurringTemplateID headers
+            if (expenseHistory.length === 0) return "ID,Date,Category,Amount,Description,Timestamp,DateTime,IsRecurring,RecurringTemplateID\n";
+
+            const headers = ["ID", "Date", "Category", "Amount", "Description", "Timestamp", "DateTime", "IsRecurring", "RecurringTemplateID"];
+            let csv = headers.join(',') + '\n';
+
+            expenseHistory.forEach(expense => {
+                const timestamp = expense.timestamp;
+                const dateTime = new Date(timestamp).toLocaleString('en-US'); 
+                const isRecurring = expense.isRecurring ? 'TRUE' : 'FALSE'; 
+                const recurringTemplateId = expense.recurringTemplateId || '';
+
+                const categoryEscaped = expense.category ? `"${expense.category.replace(/"/g, '""')}"` : '';
+                const descriptionEscaped = expense.description ? `"${expense.description.replace(/"/g, '""')}"` : '';
+
+                const row = [
+                    expense.id,
+                    expense.date, // YYYY-MM-DD format
+                    categoryEscaped,
+                    (expense.amount || 0).toFixed(2),
+                    descriptionEscaped,
+                    timestamp,
+                    `"${dateTime}"`,
+                    isRecurring,
+                    recurringTemplateId
+                ].join(',');
+                csv += row + '\n';
+            });
+            return csv;
+        }
+        
+        function getRecurringTemplatesCSVSection() {
+            if (recurringExpenses.length === 0) return "ID,Description,Category,Amount,DayOfMonth\n";
+
+            const headers = ["ID", "Description", "Category", "Amount", "DayOfMonth"];
+            let csv = headers.join(',') + '\n';
+
+            recurringExpenses.forEach(template => {
+                const categoryEscaped = template.category ? `"${template.category.replace(/"/g, '""')}"` : '';
+                const descriptionEscaped = template.description ? `"${template.description.replace(/"/g, '""')}"` : '';
+
+                const row = [
+                    template.id,
+                    descriptionEscaped,
+                    categoryEscaped,
+                    (template.amount || 0).toFixed(2),
+                    template.dayOfMonth
+                ].join(',');
+                csv += row + '\n';
+            });
+            return csv;
+        }
+
+        function exportAllDataToCSV() {
+            let csv = "";
+            
+            csv += "--- INVENTORY DATA ---\n";
+            csv += getInventoryCSVSection();
+            
+            csv += "\n--- SALES HISTORY ---\n";
+            csv += getSalesHistoryCSVSection();
+
+            csv += "\n--- MONTHLY EXPENSES LOG ---\n";
+            csv += getExpenseHistoryCSVSection();
+
+            csv += "\n--- RECURRING TEMPLATES ---\n";
+            csv += getRecurringTemplatesCSVSection();
+            
+            return csv;
+        }
+
+        window.copyCSVToClipboard = function() {
+            const csvOutput = document.getElementById('csvOutput');
+            const csvText = csvOutput.value;
+            
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(csvText).then(() => {
+                    showCopyMessage();
+                }).catch(err => {
+                    console.error('Failed to copy via clipboard API, falling back:', err);
+                    fallbackCopyToClipboard(csvOutput);
+                });
+            } else {
+                fallbackCopyToClipboard(csvOutput);
+            }
+        };
+
+        function fallbackCopyToClipboard(element) {
+            try {
+                element.select();
+                element.setSelectionRange(0, 99999);
+                document.execCommand('copy');
+                showCopyMessage();
+            } catch (e) {
+                console.warn('Copy failed. Please manually select and copy the text from the box.');
+                console.error('Fallback copy failed:', e);
+            }
+        }
+
+        function showCopyMessage() {
+            const msg = document.getElementById('copyMessage');
+            msg.classList.remove('hidden');
+            setTimeout(() => msg.classList.add('hidden'), 2000);
+        }
+
+        window.downloadCSVFile = function() {
+            const csvText = document.getElementById('csvOutput').value;
+            const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            
+            link.href = URL.createObjectURL(blob);
+            link.download = 'business_manager_export_' + new Date().toISOString().slice(0, 10) + '.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+        
+        // --- IMPORT LOGIC ---
+        
+        function smartSplit(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+
+                if (char === '"') {
+                    if (inQuotes && line[i + 1] === '"') {
+                        current += '"';
+                        i++;
+                        continue;
+                    }
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result;
+        }
+
+        /**
+         * Parses a block of CSV text (assumed to start with a header row).
+         * Returns an object containing headers and data, or an empty object structure on failure.
+         * @param {string} text - The CSV block to parse.
+         * @returns {{headers: string[], data: object[]}}
+         */
+        function parseCSV(text) {
+            const allLines = text.split(/\r?\n|\r/);
+            const lines = allLines.map(line => line.trim()).filter(line => line.length > 0);
+            
+            // FIX: Ensure consistent return object structure even if there's no data.
+            if (lines.length === 0) {
+                return { headers: [], data: [] };
+            }
+            
+            // Find the first non-header line that looks like data
+            let headerIndex = 0;
+            // The check for '---' here handles cases where an internal section marker may have crept in,
+            // even though processImportText tries to clean it up.
+            while (headerIndex < lines.length && lines[headerIndex].startsWith('---')) {
+                headerIndex++;
+            }
+            
+            if (headerIndex >= lines.length) { // No valid header found
+                 return { headers: [], data: [] };
+            }
+
+            // Assume the first clean line is the header row
+            const headers = smartSplit(lines[headerIndex]);
+            const data = [];
+            
+            // Process data rows starting *after* the determined header line
+            for (let i = headerIndex + 1; i < lines.length; i++) {
+                // Stop if we hit a new section marker inside the current data block
+                if (lines[i].startsWith('---')) { 
+                    break;
+                }
+
+                const values = smartSplit(lines[i]);
+                
+                // Also check if headers are valid to prevent division by zero or index errors
+                if (values.length !== headers.length || headers.length === 0) {
+                    console.warn(`Skipping malformed row with ${values.length} columns (expected ${headers.length}): ${lines[i]}`);
+                    continue;
+                } 
+
+                let obj = {};
+                for (let j = 0; j < headers.length; j++) {
+                    let value = values[j];
+                    // Clean up escaped quotes from smartSplit
+                    if (value.startsWith('"') && value.endsWith('"') && value.length > 1) {
+                         value = value.substring(1, value.length - 1);
+                    }
+                    obj[headers[j]] = value;
+                }
+                data.push(obj);
+            }
+            return { headers, data };
+        }
+        
+        function importInventoryData(data) {
+            let processedCount = 0;
+            fullInventoryList = []; 
+            data.forEach(row => {
+                const itemId = row.ID;
+                const itemData = {
+                    id: itemId && typeof itemId === 'string' && itemId.length > 5 ? itemId : generateId(), 
+                    name: row.Name || 'Unnamed Item',
+                    stock: Number(row.Stock) || 0,
+                    purchasePrice: Number(row.PurchasePrice) || 0,
+                    salePrice: Number(row.SalePrice) || 0,
+                    realizedProfit: row.RealizedProfit !== undefined ? Number(row.RealizedProfit) || 0 : 0,
+                };
+                if (!itemData.name || isNaN(itemData.stock) || isNaN(itemData.purchasePrice) || isNaN(itemData.salePrice)) {
+                    console.warn(`Skipping malformed inventory row: ${row.Name}`);
+                    return;
+                }
+                fullInventoryList.push(itemData);
+                processedCount++;
+            });
+            return processedCount;
+        }
+
+        function importSalesHistoryData(data) {
+            let processedCount = 0;
+            salesHistory = []; 
+            data.forEach(row => {
+                const sale = {
+                    id: row.ID || generateId(),
+                    itemId: row.ItemID,
+                    itemName: row.ItemName || 'Unknown Item',
+                    quantity: Number(row.Quantity) || 0,
+                    purchasePrice: Number(row.PurchasePrice) || 0,
+                    salePrice: Number(row.SalePrice) || 0,
+                    timestamp: Number(row.Timestamp) || Date.now(), 
+                };
+                if (sale.quantity > 0 && sale.itemId) {
+                    salesHistory.push(sale);
+                    processedCount++;
+                } else {
+                    console.warn(`Skipping malformed sale row: ${row.ItemName}`);
+                }
+            });
+            // Re-sort after import
+            salesHistory.sort((a, b) => b.timestamp - a.timestamp);
+            return processedCount;
+        }
+
+        function importExpenseHistoryData(data) {
+            let processedCount = 0;
+            expenseHistory = []; 
+            data.forEach(row => {
+                const expense = {
+                    id: row.ID || generateId(),
+                    date: row.Date,
+                    category: row.Category || 'Miscellaneous',
+                    amount: Number(row.Amount) || 0,
+                    description: row.Description || '',
+                    timestamp: Number(row.Timestamp) || Date.now(),
+                    isRecurring: row.IsRecurring === 'TRUE', 
+                    recurringTemplateId: row.RecurringTemplateID || null, 
+                };
+                if (expense.date && expense.category && expense.amount > 0) {
+                    expenseHistory.push(expense);
+                    processedCount++;
+                } else {
+                    console.warn(`Skipping malformed expense row: ${row.Category} - ${expense.amount}`);
+                }
+            });
+            // Re-sort after import
+            expenseHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+            return processedCount;
+        }
+
+        function importRecurringTemplates(data) {
+            let processedCount = 0;
+            recurringExpenses = []; 
+            data.forEach(row => {
+                const template = {
+                    id: row.ID || generateId(),
+                    description: row.Description || 'Unnamed Template',
+                    category: row.Category || 'Miscellaneous',
+                    amount: Number(row.Amount) || 0,
+                    dayOfMonth: Number(row.DayOfMonth) || 1,
+                };
+                if (template.amount > 0 && template.dayOfMonth >= 1 && template.dayOfMonth <= 28) {
+                    recurringExpenses.push(template);
+                    processedCount++;
+                } else {
+                    console.warn(`Skipping malformed template row: ${row.Description}`);
+                }
+            });
+            // Re-sort after import
+            recurringExpenses.sort((a, b) => a.dayOfMonth - b.dayOfMonth);
+            return processedCount;
+        }
+
+        /**
+         * Parses the multi-section CSV export format and imports data.
+         * Note: This function replaces existing Sales/Expenses/Templates entirely, 
+         * but merges Inventory (via local storage persistence logic).
+         */
+        window.handleImport = function() {
+            const csvInput = document.getElementById('csvInput').value;
+            const fileInput = document.getElementById('csvFileInput');
+            const importMessage = document.getElementById('importMessage');
+            
+            importMessage.classList.add('hidden');
+            importMessage.classList.remove('text-green-400', 'text-[#dc2626]');
+            
+            let rawText = csvInput.trim();
+            
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    // Added try-catch here as well for robustness during file read processing
+                    try {
+                        processImportText(e.target.result);
+                    } catch (error) {
+                         console.error("Critical error during file import processing:", error);
+                         importMessage.textContent = "A critical error occurred during file processing. Check console for details. Data may be corrupted.";
+                         importMessage.classList.remove('hidden');
+                         importMessage.classList.add('text-[#dc2626]');
+                    }
+                };
+                reader.onerror = function() {
+                    importMessage.textContent = "Error reading file.";
+                    importMessage.classList.remove('hidden');
+                    importMessage.classList.add('text-[#dc2626]');
+                };
+                reader.readAsText(file);
+                return; // Exit early, processing continues in reader.onload
+            }
+
+            if (!rawText) {
+                importMessage.textContent = "Please paste data or select a file.";
+                importMessage.classList.remove('hidden');
+                importMessage.classList.add('text-[#dc2626]');
+                return;
+            }
+
+            processImportText(rawText);
+        };
+
+        function processImportText(text) {
+            const sections = text.split('\n---');
+            let inventoryCount = 0;
+            let salesCount = 0;
+            let expenseCount = 0;
+            let recurringCount = 0;
+            const importMessage = document.getElementById('importMessage');
+
+            try {
+                sections.forEach(section => {
+                    const cleanSection = section.trim();
+                    if (!cleanSection) return;
+
+                    const lines = cleanSection.split(/\r?\n|\r/).filter(l => l.trim().length > 0);
+                    // The first line should be the section header (e.g., 'INVENTORY DATA')
+                    if (lines.length < 2) return; 
+
+                    const headerLine = lines[0].trim().toUpperCase();
+                    // dataBlock starts from the CSV headers and includes data rows
+                    const dataBlock = lines.slice(1).join('\n');
+                    
+                    // Call parseCSV, which now reliably returns {headers, data}
+                    const parsedResult = parseCSV(dataBlock); 
+                    const parsedData = parsedResult.data; // Access data property
+                    
+                    if (headerLine.includes("INVENTORY DATA")) {
+                        inventoryCount = importInventoryData(parsedData);
+                    } else if (headerLine.includes("SALES HISTORY")) {
+                        salesCount = importSalesHistoryData(parsedData);
+                    } else if (headerLine.includes("MONTHLY EXPENSES LOG")) {
+                        expenseCount = importExpenseHistoryData(parsedData);
+                    } else if (headerLine.includes("RECURRING TEMPLATES")) {
+                        recurringCount = importRecurringTemplates(parsedData);
+                    }
+                });
+
+                saveData();
+                loadData();
+                
+                importMessage.textContent = `Import successful! Loaded: ${inventoryCount} Inventory, ${salesCount} Sales, ${expenseCount} Expenses, ${recurringCount} Templates.`;
+                importMessage.classList.remove('hidden');
+                importMessage.classList.add('text-green-400');
+                
+                // Clear input fields after success
+                document.getElementById('csvInput').value = '';
+                document.getElementById('csvFileInput').value = '';
+
+            } catch (e) {
+                console.error("Critical error during import:", e);
+                importMessage.textContent = "A critical error occurred during import. Check console for details. Data may be corrupted.";
+                importMessage.classList.remove('hidden');
+                importMessage.classList.add('text-[#dc2626]');
+            }
+        }
+        
+        // --- INITIAL LOAD & KEY LISTENERS ---
+        window.onload = function() {
+            loadData();
+            // Start by showing the dashboard and setting its link as active
+            document.getElementById(`content-dashboard`).classList.remove('hidden');
+            document.getElementById(`nav-dashboard`).classList.add('active-tab');
+
+            
+            // Add global listener to close modals/menu via Escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    // Close the mobile menu first if open
+                    if (document.getElementById('mobileMenu').classList.contains('active')) {
+                        toggleMobileMenu();
+                        return;
+                    }
+                    
+                    // Close any open modals
+                    const modalIds = ['addItemModal', 'stockModal', 'clearDataModal', 'exportImportModal', 'expenseMasterModal']; 
+                    for (const id of modalIds) {
+                        const modal = document.getElementById(id);
+                        if (modal && !modal.classList.contains('hidden')) {
+                            closeModal(id);
+                            return;
+                        }
+                    }
+                }
+            });
+        };
+        
+    </script>
+</body>
+</html>
+
